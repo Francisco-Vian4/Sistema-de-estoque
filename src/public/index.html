@@ -1,0 +1,852 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Controle de Estoque Pro — Assistência Técnica</title>
+  <!-- Google Fonts & Font Awesome -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- Stylesheets -->
+  <link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+  <!-- TOAST NOTIFICATIONS CONTAINER -->
+  <div id="toastContainer" class="toast-container"></div>
+
+  <!-- TELA DE LOGIN (EXIBIDA SE NÃO AUTENTICADO) -->
+  <div id="loginScreen" class="login-wrapper">
+    <div class="login-bg-shapes">
+      <div class="shape shape-1"></div>
+      <div class="shape shape-2"></div>
+      <div class="shape shape-3"></div>
+    </div>
+    <div class="login-card">
+      <div class="login-header">
+        <div class="logo-circle">
+          <i class="fa-solid fa-boxes-stacked"></i>
+        </div>
+        <h1>Controle de Estoque Pro</h1>
+        <p>Sistema Especializado para Assistência Técnica & Varejo</p>
+      </div>
+
+      <div class="role-selector-pills">
+        <button type="button" class="role-pill active" id="btnRoleAdmin" onclick="setLoginRole('admin')">
+          <i class="fa-solid fa-shield-halved"></i> Administrador
+        </button>
+        <button type="button" class="role-pill" id="btnRoleUser" onclick="setLoginRole('user')">
+          <i class="fa-solid fa-user"></i> Operador
+        </button>
+      </div>
+
+      <form id="loginForm" onsubmit="handleLogin(event)">
+        <div class="form-group">
+          <label><i class="fa-solid fa-envelope"></i> E-mail de Acesso</label>
+          <input type="email" id="loginEmail" class="form-control" required placeholder="seu.email@empresa.com" value="admin@estoque.com">
+        </div>
+        <div class="form-group">
+          <label><i class="fa-solid fa-lock"></i> Senha</label>
+          <div class="password-wrapper">
+            <input type="password" id="loginPassword" class="form-control" required placeholder="Digite sua senha" value="admin123">
+            <button type="button" class="btn-toggle-pass" onclick="togglePasswordVisibility('loginPassword')">
+              <i class="fa-solid fa-eye"></i>
+            </button>
+          </div>
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-block btn-lg" id="btnLoginSubmit">
+          <span>Entrar no Sistema</span>
+          <i class="fa-solid fa-arrow-right"></i>
+        </button>
+      </form>
+
+      <div class="login-demo-helpers">
+        <div class="demo-title">Acesso Rápido de Teste:</div>
+        <div class="demo-buttons">
+          <button type="button" class="demo-btn" onclick="fillCredentials('admin@estoque.com', 'admin123', 'admin')">
+            <strong>Admin:</strong> admin@estoque.com (admin123)
+          </button>
+          <button type="button" class="demo-btn" onclick="fillCredentials('usuario@estoque.com', 'user123', 'user')">
+            <strong>Operador:</strong> usuario@estoque.com (user123)
+          </button>
+        </div>
+      </div>
+
+      <div class="login-footer">
+        <span class="pulse-indicator"></span> Tempo real ativo via Socket.io &bull; Suporte PostgreSQL / Supabase
+      </div>
+    </div>
+  </div>
+
+  <!-- APLICAÇÃO PRINCIPAL (EXIBIDA APÓS O LOGIN) -->
+  <div id="appScreen" class="app-container" style="display: none;">
+    <!-- SIDEBAR DE NAVEGAÇÃO -->
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="brand-icon">
+          <i class="fa-solid fa-boxes-stacked"></i>
+        </div>
+        <div class="brand-text">
+          <h2>Estoque Pro</h2>
+          <span>Assistência Técnica</span>
+        </div>
+      </div>
+
+      <nav class="sidebar-menu">
+        <button class="nav-item active" onclick="switchTab('dashboard')">
+          <i class="fa-solid fa-chart-pie"></i>
+          <span>Painel Geral</span>
+        </button>
+        <button class="nav-item" onclick="switchTab('products')">
+          <i class="fa-solid fa-box-open"></i>
+          <span>Produtos & Peças</span>
+          <span class="badge badge-primary" id="sidebarProdCount">0</span>
+        </button>
+        <button class="nav-item" onclick="switchTab('movements')">
+          <i class="fa-solid fa-arrow-right-arrow-left"></i>
+          <span>Movimentações</span>
+        </button>
+        <button class="nav-item" onclick="switchTab('reports')">
+          <i class="fa-solid fa-file-invoice"></i>
+          <span>Central de Relatórios</span>
+        </button>
+        <button class="nav-item admin-only" onclick="switchTab('users')">
+          <i class="fa-solid fa-users-gear"></i>
+          <span>Usuários</span>
+        </button>
+        <button class="nav-item" onclick="switchTab('database')">
+          <i class="fa-solid fa-database"></i>
+          <span>Banco / Supabase</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-extension-box">
+        <div class="ext-icon"><i class="fa-solid fa-puzzle-piece"></i></div>
+        <div class="ext-info">
+          <h4>Extensão Chrome / Edge</h4>
+          <p>Acesse o estoque em qualquer aba</p>
+          <button class="btn btn-xs btn-outline-light" onclick="openExtensionModal()">Ver Como Instalar</button>
+        </div>
+      </div>
+
+      <div class="sidebar-user">
+        <div class="user-avatar" id="sidebarAvatar">A</div>
+        <div class="user-info">
+          <strong id="sidebarUserName">Administrador</strong>
+          <span class="user-role-badge" id="sidebarUserRole">Admin</span>
+        </div>
+        <button class="btn-logout" title="Sair" onclick="handleLogout()">
+          <i class="fa-solid fa-right-from-bracket"></i>
+        </button>
+      </div>
+    </aside>
+
+    <!-- ÁREA PRINCIPAL DE CONTEÚDO -->
+    <main class="main-content">
+      <!-- CABEÇALHO SUPERIOR -->
+      <header class="topbar">
+        <div class="topbar-left">
+          <h1 id="topbarTitle">Painel Geral</h1>
+          <div class="live-status-chip">
+            <span class="pulse-dot"></span>
+            <span id="socketStatusText">Tempo Real Ativo</span>
+          </div>
+        </div>
+        <div class="topbar-right">
+          <div class="search-mini">
+            <i class="fa-solid fa-magnifying-glass"></i>
+            <input type="text" id="globalSearch" placeholder="Buscar código, produto, marca..." onkeyup="debounceGlobalSearch(event)">
+          </div>
+          <button class="btn btn-primary" onclick="openNewProductModal()">
+            <i class="fa-solid fa-plus"></i> Novo Produto
+          </button>
+          <button class="btn btn-outline admin-only" onclick="openNewMovementModal()">
+            <i class="fa-solid fa-dolly"></i> Movimentar
+          </button>
+        </div>
+      </header>
+
+      <!-- CONTEÚDO DAS ABAS -->
+      <div class="tab-content-area">
+        <!-- 1. ABA DASHBOARD -->
+        <section id="tab-dashboard" class="tab-pane active">
+          <!-- KPI CARDS -->
+          <div class="kpi-grid">
+            <div class="kpi-card">
+              <div class="kpi-icon blue">
+                <i class="fa-solid fa-boxes-packing"></i>
+              </div>
+              <div class="kpi-details">
+                <span class="kpi-label">Itens Cadastrados</span>
+                <h3 class="kpi-value" id="kpiTotalItens">0</h3>
+                <span class="kpi-sub">Total de produtos únicos</span>
+              </div>
+            </div>
+
+            <div class="kpi-card">
+              <div class="kpi-icon cyan">
+                <i class="fa-solid fa-cubes"></i>
+              </div>
+              <div class="kpi-details">
+                <span class="kpi-label">Unidades Físicas</span>
+                <h3 class="kpi-value" id="kpiTotalQtd">0</h3>
+                <span class="kpi-sub">Total de peças em prateleira</span>
+              </div>
+            </div>
+
+            <div class="kpi-card admin-only">
+              <div class="kpi-icon indigo">
+                <i class="fa-solid fa-receipt"></i>
+              </div>
+              <div class="kpi-details">
+                <span class="kpi-label">Valor Total (Custo)</span>
+                <h3 class="kpi-value" id="kpiValorCusto">R$ 0,00</h3>
+                <span class="kpi-sub">Investimento imobilizado</span>
+              </div>
+            </div>
+
+            <div class="kpi-card admin-only">
+              <div class="kpi-icon emerald">
+                <i class="fa-solid fa-cash-register"></i>
+              </div>
+              <div class="kpi-details">
+                <span class="kpi-label">Valor Total (Venda)</span>
+                <h3 class="kpi-value" id="kpiValorVenda">R$ 0,00</h3>
+                <span class="kpi-sub" id="kpiMargemSub">Margem média: 0%</span>
+              </div>
+            </div>
+
+            <div class="kpi-card">
+              <div class="kpi-icon amber">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+              </div>
+              <div class="kpi-details">
+                <span class="kpi-label">Estoque Baixo</span>
+                <h3 class="kpi-value" id="kpiEstoqueBaixo">0</h3>
+                <span class="kpi-sub">Abaixo do estoque mínimo</span>
+              </div>
+            </div>
+
+            <div class="kpi-card">
+              <div class="kpi-icon rose">
+                <i class="fa-solid fa-circle-xmark"></i>
+              </div>
+              <div class="kpi-details">
+                <span class="kpi-label">Sem Estoque</span>
+                <h3 class="kpi-value" id="kpiSemEstoque">0</h3>
+                <span class="kpi-sub">Necessitam compra urgente</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- GRÁFICOS E PAINÉIS RÁPIDOS -->
+          <div class="dashboard-row">
+            <div class="card card-categories">
+              <div class="card-header">
+                <h3><i class="fa-solid fa-layer-group"></i> Itens por Categoria</h3>
+                <span class="badge badge-light" id="catCountBadge">13 categorias</span>
+              </div>
+              <div class="card-body">
+                <div id="categoryBarsList" class="category-bars-container">
+                  <!-- Inserido dinamicamente -->
+                </div>
+              </div>
+            </div>
+
+            <div class="card card-recent-movements">
+              <div class="card-header">
+                <h3><i class="fa-solid fa-timeline"></i> Movimentações em Tempo Real</h3>
+                <button class="btn btn-xs btn-outline" onclick="switchTab('movements')">Ver Todas</button>
+              </div>
+              <div class="card-body">
+                <div id="recentMovementsFeed" class="movement-feed">
+                  <!-- Inserido dinamicamente -->
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 2. ABA PRODUTOS (TABELA COM AS 20 COLUNAS) -->
+        <section id="tab-products" class="tab-pane">
+          <div class="table-toolbar">
+            <div class="toolbar-search">
+              <i class="fa-solid fa-magnifying-glass"></i>
+              <input type="text" id="prodSearchInput" placeholder="Buscar por código, produto, marca, modelo, localização..." oninput="onProdSearch()">
+            </div>
+
+            <div class="toolbar-filters">
+              <select id="filterCategory" class="form-select" onchange="loadProducts()">
+                <option value="TODAS">Todas as Categorias</option>
+              </select>
+
+              <select id="filterStatus" class="form-select" onchange="loadProducts()">
+                <option value="TODOS">Todos os Status</option>
+                <option value="OK">Status: OK</option>
+                <option value="ESTOQUE BAIXO">Status: Estoque Baixo</option>
+                <option value="SEM ESTOQUE">Status: Sem Estoque</option>
+              </select>
+
+              <div class="dropdown">
+                <button class="btn btn-outline" onclick="toggleExportMenu()">
+                  <i class="fa-solid fa-cloud-arrow-down"></i> Exportar
+                </button>
+                <div id="exportDropdown" class="dropdown-menu">
+                  <a href="#" onclick="downloadReport('pdf')"><i class="fa-solid fa-file-pdf red-icon"></i> Relatório PDF</a>
+                  <a href="#" onclick="downloadReport('excel')"><i class="fa-solid fa-file-excel green-icon"></i> Planilha Excel (.xlsx)</a>
+                  <a href="#" onclick="downloadReport('word')"><i class="fa-solid fa-file-word blue-icon"></i> Documento Word (.docx)</a>
+                </div>
+              </div>
+
+              <button class="btn btn-outline admin-only" onclick="document.getElementById('excelFileInput').click()" title="Importar nova planilha Excel">
+                <i class="fa-solid fa-file-import"></i> Importar Excel
+              </button>
+              <input type="file" id="excelFileInput" accept=".xlsx,.xls" style="display:none;" onchange="handleExcelUpload(event)">
+            </div>
+          </div>
+
+          <!-- TABELA RESPONSIVA COM 20 COLUNAS -->
+          <div class="table-card">
+            <div class="table-responsive">
+              <table class="data-table" id="productsTable">
+                <thead>
+                  <tr>
+                    <th>Ações</th>
+                    <th>Foto</th>
+                    <th>Código</th>
+                    <th>Produto / Peça</th>
+                    <th>Categoria</th>
+                    <th>Marca</th>
+                    <th>Modelo / Especificação</th>
+                    <th>Un.</th>
+                    <th>Qtd. Estoque</th>
+                    <th>Est. Mín</th>
+                    <th>Est. Máx</th>
+                    <th class="admin-only">Custo (R$)</th>
+                    <th>Venda (R$)</th>
+                    <th class="admin-only">Margem (%)</th>
+                    <th class="admin-only">Total Estoque</th>
+                    <th>Localização</th>
+                    <th>Fornecedor</th>
+                    <th>Data Entrada</th>
+                    <th>Status</th>
+                    <th>Observações</th>
+                  </tr>
+                </thead>
+                <tbody id="productsTableBody">
+                  <!-- Linhas renderizadas dinamicamente -->
+                </tbody>
+              </table>
+            </div>
+            <div class="table-footer">
+              <span id="tableResultsCount">Mostrando 0 produtos</span>
+              <div class="table-legends">
+                <span class="legend-item"><span class="badge badge-success">OK</span> Normal</span>
+                <span class="legend-item"><span class="badge badge-warning">BAIXO</span> Reposição</span>
+                <span class="legend-item"><span class="badge badge-danger">SEM ESTOQUE</span> Zerado</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 3. ABA MOVIMENTAÇÕES -->
+        <section id="tab-movements" class="tab-pane">
+          <div class="section-header">
+            <div>
+              <h2>Histórico de Movimentações de Estoque</h2>
+              <p>Registro de todas as entradas, saídas e ajustes com auditoria e usuário responsável</p>
+            </div>
+            <button class="btn btn-primary admin-only" onclick="openNewMovementModal()">
+              <i class="fa-solid fa-plus"></i> Nova Movimentação
+            </button>
+          </div>
+
+          <div class="table-card">
+            <div class="table-responsive">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Data / Hora</th>
+                    <th>Código</th>
+                    <th>Produto</th>
+                    <th>Tipo</th>
+                    <th>Qtd.</th>
+                    <th>Saldo Anterior</th>
+                    <th>Novo Saldo</th>
+                    <th>Motivo / Observações</th>
+                    <th>Responsável</th>
+                  </tr>
+                </thead>
+                <tbody id="movementsTableBody">
+                  <!-- Inserido dinamicamente -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- 4. ABA CENTRAL DE RELATÓRIOS -->
+        <section id="tab-reports" class="tab-pane">
+          <div class="section-header">
+            <div>
+              <h2>Central de Emissão de Relatórios</h2>
+              <p>Gere e baixe relatórios consolidados em tempo real em formato PDF, Excel e Word</p>
+            </div>
+          </div>
+
+          <div class="reports-filter-card">
+            <h3>Filtros do Relatório</h3>
+            <div class="filters-row">
+              <div class="form-group">
+                <label>Filtrar por Categoria</label>
+                <select id="reportCategory" class="form-select">
+                  <option value="TODAS">Todas as Categorias</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Filtrar por Situação do Estoque</label>
+                <select id="reportStatus" class="form-select">
+                  <option value="TODOS">Todos os Produtos</option>
+                  <option value="ESTOQUE BAIXO">Apenas Itens com Estoque Baixo</option>
+                  <option value="SEM ESTOQUE">Apenas Itens Sem Estoque / Zerados</option>
+                  <option value="OK">Apenas Itens Regulares (OK)</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="reports-grid">
+            <!-- CARD PDF -->
+            <div class="report-card">
+              <div class="report-badge pdf-badge"><i class="fa-solid fa-file-pdf"></i> PDF</div>
+              <h3>Relatório Executivo PDF</h3>
+              <p>Documento formatado em orientação paisagem com cabeçalho institucional da assistência, sumário financeiro e grade completa para impressão.</p>
+              <ul class="report-features">
+                <li><i class="fa-solid fa-check"></i> Layout profissional estilizado em azul</li>
+                <li><i class="fa-solid fa-check"></i> Indicadores executivos no topo</li>
+                <li><i class="fa-solid fa-check"></i> Pronto para envio por e-mail ou impressão</li>
+              </ul>
+              <button class="btn btn-danger btn-block" onclick="generateFilteredReport('pdf')">
+                <i class="fa-solid fa-download"></i> Baixar Relatório em PDF
+              </button>
+            </div>
+
+            <!-- CARD EXCEL -->
+            <div class="report-card">
+              <div class="report-badge excel-badge"><i class="fa-solid fa-file-excel"></i> EXCEL (.xlsx)</div>
+              <h3>Planilha Dinâmica Excel</h3>
+              <p>Arquivo compatível com Microsoft Excel contendo todas as 20 colunas e aba adicional de Resumo com métricas totais consolidadas.</p>
+              <ul class="report-features">
+                <li><i class="fa-solid fa-check"></i> Aba 1: Estoque Detalhado (20 colunas)</li>
+                <li><i class="fa-solid fa-check"></i> Aba 2: Resumo Executivo e Totais</li>
+                <li><i class="fa-solid fa-check"></i> Formatação idêntica à planilha original</li>
+              </ul>
+              <button class="btn btn-success btn-block" onclick="generateFilteredReport('excel')">
+                <i class="fa-solid fa-download"></i> Baixar Planilha Excel
+              </button>
+            </div>
+
+            <!-- CARD WORD -->
+            <div class="report-card">
+              <div class="report-badge word-badge"><i class="fa-solid fa-file-word"></i> WORD (.docx)</div>
+              <h3>Documento Editável Word</h3>
+              <p>Relatório executivo formatado no padrão Microsoft Word (.docx), com tabelas estilizáveis, índices e resumo para auditorias.</p>
+              <ul class="report-features">
+                <li><i class="fa-solid fa-check"></i> Tabelas estruturadas com cabeçalho azul</li>
+                <li><i class="fa-solid fa-check"></i> Totalmente editável no Word / LibreOffice</li>
+                <li><i class="fa-solid fa-check"></i> Sumário para diretoria e prestação de contas</li>
+              </ul>
+              <button class="btn btn-primary btn-block" onclick="generateFilteredReport('word')">
+                <i class="fa-solid fa-download"></i> Baixar Documento Word
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <!-- 5. ABA USUÁRIOS (ADMIN) -->
+        <section id="tab-users" class="tab-pane">
+          <div class="section-header">
+            <div>
+              <h2>Gestão de Usuários e Permissões</h2>
+              <p>Cadastre e gerencie os acessos de Administradores e Operadores de Estoque</p>
+            </div>
+            <button class="btn btn-primary" onclick="openNewUserModal()">
+              <i class="fa-solid fa-user-plus"></i> Novo Usuário
+            </button>
+          </div>
+
+          <div class="table-card">
+            <div class="table-responsive">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Nome</th>
+                    <th>E-mail</th>
+                    <th>Nível de Acesso (Perfil)</th>
+                    <th>Permissões Concedidas</th>
+                    <th>Data Cadastro</th>
+                  </tr>
+                </thead>
+                <tbody id="usersTableBody">
+                  <!-- Preenchido via JS -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- 6. ABA BANCO / SUPABASE -->
+        <section id="tab-database" class="tab-pane">
+          <div class="section-header">
+            <div>
+              <h2>Conexão de Banco de Dados & Supabase</h2>
+              <p>O sistema suporta tanto banco de dados local (SQLite) quanto nuvem (PostgreSQL / Supabase)</p>
+            </div>
+          </div>
+
+          <div class="db-config-grid">
+            <div class="card db-card">
+              <div class="db-status-banner">
+                <div class="db-status-icon"><i class="fa-solid fa-server"></i></div>
+                <div>
+                  <span class="db-type-tag" id="currentDbTypeTag">SQLite Local</span>
+                  <h3>Status da Conexão</h3>
+                  <p id="currentDbStatusDesc">Banco de dados local ativo com persistência em disco.</p>
+                </div>
+              </div>
+
+              <div class="supabase-guide">
+                <h4><i class="fa-solid fa-bolt"></i> Como Conectar ao PostgreSQL ou Supabase:</h4>
+                <ol>
+                  <li>No seu painel do <strong>Supabase</strong>, vá em <em>Project Settings &rarr; Database &rarr; Connection string &rarr; URI</em>.</li>
+                  <li>Copie o link (ex: <code>postgresql://postgres:[SUA_SENHA]@db.[REF].supabase.co:5432/postgres</code>).</li>
+                  <li>No arquivo <code>.env</code> do projeto, configure:
+                    <pre><code>DATABASE_URL=postgresql://postgres:sua_senha@db.exemplo.supabase.co:5432/postgres</code></pre>
+                  </li>
+                  <li>Reinicie a aplicação. Todas as tabelas e dados serão migrados e sincronizados automaticamente!</li>
+                </ol>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <!-- MODAL: CADASTRAR / EDITAR PRODUTO -->
+  <div id="productModal" class="modal-overlay">
+    <div class="modal-box modal-lg">
+      <div class="modal-header">
+        <h3 id="productModalTitle"><i class="fa-solid fa-box-open"></i> Novo Produto</h3>
+        <button class="modal-close" onclick="closeModal('productModal')">&times;</button>
+      </div>
+      <form id="productForm" onsubmit="handleSaveProduct(event)">
+        <input type="hidden" id="prodFormId">
+        <div class="modal-body">
+          <div class="form-grid-3">
+            <div class="form-group">
+              <label>Código do Produto *</label>
+              <div class="input-action-wrapper">
+                <input type="text" id="prodCodigo" class="form-control" required placeholder="Ex: EST-036">
+                <button type="button" class="btn btn-sm btn-outline" onclick="generateAutoCode()" title="Gerar Código Automático">Auto</button>
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Categoria *</label>
+              <input type="text" id="prodCategoria" class="form-control" required placeholder="Ex: Armazenamento, Fontes..." list="categoryDatalist">
+              <datalist id="categoryDatalist"></datalist>
+            </div>
+            <div class="form-group">
+              <label>Unidade *</label>
+              <select id="prodUnidade" class="form-select">
+                <option value="UN">UN (Unidade)</option>
+                <option value="CX">CX (Caixa)</option>
+                <option value="PCT">PCT (Pacote)</option>
+                <option value="KIT">KIT (Conjunto)</option>
+                <option value="METRO">METRO (Metro linear)</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-grid-2">
+            <div class="form-group">
+              <label>Produto / Nome da Peça *</label>
+              <input type="text" id="prodNome" class="form-control" required placeholder="Ex: SSD 1TB NVMe M.2">
+            </div>
+            <div class="form-group">
+              <label>Marca</label>
+              <input type="text" id="prodMarca" class="form-control" placeholder="Ex: Kingston, WD, Corsair">
+            </div>
+          </div>
+
+          <div class="form-grid-2">
+            <div class="form-group">
+              <label>Modelo / Especificação</label>
+              <input type="text" id="prodModelo" class="form-control" placeholder="Ex: SN570 NVMe PCIe Gen3 x4">
+            </div>
+            <div class="form-group">
+              <label>Localização (Prateleira / Gaveta)</label>
+              <input type="text" id="prodLocalizacao" class="form-control" placeholder="Ex: A1-05">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>Descrição Detalhada</label>
+            <textarea id="prodDescricao" class="form-control" rows="2" placeholder="Especificações técnicas, compatibilidade, leitura/escrita..."></textarea>
+          </div>
+
+          <div class="form-section-title"><i class="fa-solid fa-boxes-stacked"></i> Quantidades e Estoque</div>
+          <div class="form-grid-3">
+            <div class="form-group">
+              <label>Qtd. Inicial em Estoque *</label>
+              <input type="number" id="prodQtd" class="form-control" required min="0" value="0" oninput="calculateFinancials()">
+            </div>
+            <div class="form-group">
+              <label>Estoque Mínimo (Alerta de Baixo)</label>
+              <input type="number" id="prodMin" class="form-control" min="0" value="3" oninput="calculateFinancials()">
+            </div>
+            <div class="form-group">
+              <label>Estoque Máximo</label>
+              <input type="number" id="prodMax" class="form-control" min="0" value="20">
+            </div>
+          </div>
+
+          <div class="form-section-title"><i class="fa-solid fa-brazilian-real-sign"></i> Preços, Margem e Financeiro</div>
+          <div class="form-grid-4">
+            <div class="form-group">
+              <label>Preço de Custo (R$) *</label>
+              <input type="number" id="prodCusto" class="form-control" step="0.01" min="0" required value="0.00" oninput="calculateFinancials()">
+            </div>
+            <div class="form-group">
+              <label>Preço de Venda (R$) *</label>
+              <input type="number" id="prodVenda" class="form-control" step="0.01" min="0" required value="0.00" oninput="calculateFinancials()">
+            </div>
+            <div class="form-group">
+              <label>Margem de Lucro Estimada</label>
+              <input type="text" id="prodMargem" class="form-control font-bold" readonly value="0.0%">
+            </div>
+            <div class="form-group">
+              <label>Valor Total em Estoque</label>
+              <input type="text" id="prodValorTotal" class="form-control font-bold" readonly value="R$ 0,00">
+            </div>
+          </div>
+
+          <div class="form-section-title"><i class="fa-solid fa-truck"></i> Dados Adicionais & Mídia</div>
+          <div class="form-grid-2">
+            <div class="form-group">
+              <label>Fornecedor</label>
+              <input type="text" id="prodFornecedor" class="form-control" placeholder="Ex: Kabum Distribuidora, WD Brasil...">
+            </div>
+            <div class="form-group">
+              <label>Data de Entrada</label>
+              <input type="text" id="prodDataEntrada" class="form-control" placeholder="DD/MM/AAAA">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>Link da Imagem do Produto (URL Direta)</label>
+            <div class="image-input-group">
+              <input type="url" id="prodImagemUrl" class="form-control" placeholder="https://exemplo.com/foto.jpg" oninput="previewModalImage(this.value)">
+              <div id="modalImagePreview" class="modal-img-preview">
+                <i class="fa-solid fa-image"></i>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>Observações</label>
+            <textarea id="prodObservacoes" class="form-control" rows="2" placeholder="Observações internas, garantia do fabricante, saídas rápidas..."></textarea>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline" onclick="closeModal('productModal')">Cancelar</button>
+          <button type="submit" class="btn btn-primary" id="btnSaveProduct">
+            <i class="fa-solid fa-floppy-disk"></i> Salvar Produto
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: MOVIMENTAÇÃO DE ESTOQUE (ENTRADA / SAÍDA / AJUSTE) -->
+  <div id="movementModal" class="modal-overlay">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3><i class="fa-solid fa-dolly"></i> Movimentar Estoque</h3>
+        <button class="modal-close" onclick="closeModal('movementModal')">&times;</button>
+      </div>
+      <form id="movementForm" onsubmit="handleSaveMovement(event)">
+        <div class="modal-body">
+          <div class="form-group">
+            <label>Selecione o Produto *</label>
+            <select id="movProdutoId" class="form-select" required onchange="onMovementProductChange()">
+              <option value="">Selecione um item...</option>
+            </select>
+          </div>
+
+          <div id="movProductInfoBox" class="product-info-badge" style="display:none;">
+            <div>Saldo Atual: <strong id="movCurrentStock">0</strong> UN</div>
+            <div>Prateleira: <strong id="movLocation">-</strong></div>
+          </div>
+
+          <div class="form-group">
+            <label>Tipo de Movimentação *</label>
+            <div class="movement-type-chips">
+              <label class="type-chip chip-entrada">
+                <input type="radio" name="movTipo" value="ENTRADA" checked onchange="updateMovPreview()">
+                <span><i class="fa-solid fa-arrow-down"></i> Entrada (Compra/Nota)</span>
+              </label>
+              <label class="type-chip chip-saida">
+                <input type="radio" name="movTipo" value="SAIDA" onchange="updateMovPreview()">
+                <span><i class="fa-solid fa-arrow-up"></i> Saída (Venda/Serviço)</span>
+              </label>
+              <label class="type-chip chip-ajuste">
+                <input type="radio" name="movTipo" value="AJUSTE" onchange="updateMovPreview()">
+                <span><i class="fa-solid fa-sliders"></i> Ajuste (Balanço)</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>Quantidade *</label>
+            <input type="number" id="movQuantidade" class="form-control" required min="1" value="1" oninput="updateMovPreview()">
+          </div>
+
+          <div class="mov-preview-banner" id="movPreviewBanner">
+            Novo saldo previsto: <strong id="movNewStockPreview">0</strong> unidades
+          </div>
+
+          <div class="form-group">
+            <label>Motivo / Justificativa</label>
+            <input type="text" id="movMotivo" class="form-control" placeholder="Ex: Nota Fiscal 12458, Ordem de Serviço #309, Balanço físico...">
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline" onclick="closeModal('movementModal')">Cancelar</button>
+          <button type="submit" class="btn btn-primary">
+            <i class="fa-solid fa-check"></i> Confirmar Movimentação
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: VISUALIZAÇÃO DETALHADA DO PRODUTO -->
+  <div id="viewProductModal" class="modal-overlay">
+    <div class="modal-box modal-lg">
+      <div class="modal-header">
+        <h3 id="viewModalTitle">Detalhes do Produto</h3>
+        <button class="modal-close" onclick="closeModal('viewProductModal')">&times;</button>
+      </div>
+      <div class="modal-body" id="viewModalBody">
+        <!-- Renderizado dinamicamente -->
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline" onclick="closeModal('viewProductModal')">Fechar</button>
+        <button type="button" class="btn btn-primary admin-only" id="btnEditFromView">Editar Produto</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: GUIA DA EXTENSÃO DO NAVEGADOR -->
+  <div id="extensionModal" class="modal-overlay">
+    <div class="modal-box modal-lg">
+      <div class="modal-header">
+        <h3><i class="fa-solid fa-puzzle-piece"></i> Como Ativar a Extensão do Navegador</h3>
+        <button class="modal-close" onclick="closeModal('extensionModal')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="ext-modal-banner">
+          <i class="fa-solid fa-bolt"></i>
+          <div>
+            <h4>Controle de Estoque Sempre ao Alcance</h4>
+            <p>Cadastre peças, monitore o estoque e baixe relatórios diretamente da barra do seu Google Chrome ou Microsoft Edge!</p>
+          </div>
+        </div>
+
+        <div class="ext-steps-list">
+          <div class="step-card">
+            <div class="step-num">1</div>
+            <div class="step-desc">
+              <strong>Abra a tela de extensões:</strong>
+              No Chrome digite <code>chrome://extensions</code> ou no Edge digite <code>edge://extensions</code> na barra de endereços.
+            </div>
+          </div>
+          <div class="step-card">
+            <div class="step-num">2</div>
+            <div class="step-desc">
+              <strong>Ative o Modo do Desenvolvedor:</strong>
+              Ative o botão seletor <em>"Modo do desenvolvedor"</em> no canto superior direito da página.
+            </div>
+          </div>
+          <div class="step-card">
+            <div class="step-num">3</div>
+            <div class="step-desc">
+              <strong>Carregar sem compactação:</strong>
+              Clique no botão <em>"Carregar sem compactação"</em> (ou <em>"Load unpacked"</em>) e selecione a pasta:
+              <pre class="folder-path-box"><code>C:\Users\franc\.gemini\antigravity\scratch\sistema-estoque\extension</code></pre>
+            </div>
+          </div>
+          <div class="step-card">
+            <div class="step-num">4</div>
+            <div class="step-desc">
+              <strong>Pronto!</strong> O ícone azul da caixa aparecerá no canto do navegador com atualização em tempo real instantânea!
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-primary" onclick="closeModal('extensionModal')">Entendido!</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: NOVO USUÁRIO -->
+  <div id="userModal" class="modal-overlay">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3><i class="fa-solid fa-user-plus"></i> Novo Usuário do Sistema</h3>
+        <button class="modal-close" onclick="closeModal('userModal')">&times;</button>
+      </div>
+      <form id="userForm" onsubmit="handleSaveUser(event)">
+        <div class="modal-body">
+          <div class="form-group">
+            <label>Nome Completo *</label>
+            <input type="text" id="newUserName" class="form-control" required placeholder="Ex: Carlos Silva">
+          </div>
+          <div class="form-group">
+            <label>E-mail *</label>
+            <input type="email" id="newUserEmail" class="form-control" required placeholder="carlos@empresa.com">
+          </div>
+          <div class="form-group">
+            <label>Senha de Acesso *</label>
+            <input type="password" id="newUserPassword" class="form-control" required minlength="6" placeholder="Mínimo 6 caracteres">
+          </div>
+          <div class="form-group">
+            <label>Perfil de Acesso *</label>
+            <select id="newUserRole" class="form-select">
+              <option value="user">Operador (Cadastro e Consulta)</option>
+              <option value="admin">Administrador (Gestão total, Relatórios e Movimentações)</option>
+            </select>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline" onclick="closeModal('userModal')">Cancelar</button>
+          <button type="submit" class="btn btn-primary">Criar Usuário</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- SCRIPTS -->
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/auth.js"></script>
+  <script src="/js/socket-client.js"></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>

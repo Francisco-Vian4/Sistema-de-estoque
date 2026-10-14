@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "Controle de Estoque Pro",
+  "version": "1.0.0",
+  "description": "Acesso rápido, cadastro, relatórios e monitoramento de estoque em tempo real para Assistência Técnica.",
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Controle de Estoque Pro",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "http://localhost:*/*",
+    "http://127.0.0.1:*/*",
+    "https://*/*"
+  ]
+}

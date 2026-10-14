@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Estoque Pro Extension</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <!-- HEADER COM STATUS EM TEMPO REAL -->
+  <header class="ext-header">
+    <div class="ext-brand">
+      <div class="ext-logo">📦</div>
+      <div>
+        <h2>Estoque Pro</h2>
+        <div class="ext-socket-chip">
+          <span class="pulse-indicator" id="extSocketDot"></span>
+          <span id="extSocketStatus">Conectando...</span>
+        </div>
+      </div>
+    </div>
+    <div class="ext-user-tag" id="extUserTag">Visitante</div>
+  </header>
+
+  <!-- VIEW DE LOGIN -->
+  <div id="extLoginView" class="ext-view active">
+    <div class="ext-login-card">
+      <h3>Acesso ao Sistema</h3>
+      <p>Conecte-se para gerenciar o estoque em tempo real</p>
+
+      <form id="extLoginForm" onsubmit="handleExtLogin(event)">
+        <div class="ext-form-group">
+          <label>Servidor da API</label>
+          <input type="url" id="extApiUrl" class="ext-input" required value="http://localhost:3000">
+        </div>
+        <div class="ext-form-group">
+          <label>E-mail</label>
+          <input type="email" id="extLoginEmail" class="ext-input" required value="admin@estoque.com">
+        </div>
+        <div class="ext-form-group">
+          <label>Senha</label>
+          <input type="password" id="extLoginPass" class="ext-input" required value="admin123">
+        </div>
+
+        <button type="submit" class="ext-btn ext-btn-primary ext-btn-block" id="btnExtLogin">
+          Entrar na Extensão
+        </button>
+      </form>
+
+      <div class="ext-demo-pills">
+        <button type="button" class="ext-demo-btn" onclick="fillExtCredentials('admin@estoque.com', 'admin123')">Admin</button>
+        <button type="button" class="ext-demo-btn" onclick="fillExtCredentials('usuario@estoque.com', 'user123')">Operador</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- VIEW PRINCIPAL (PÓS-LOGIN) -->
+  <div id="extMainView" class="ext-view" style="display: none;">
+    <!-- NAVEGAÇÃO DE ABAS -->
+    <nav class="ext-tabs">
+      <button class="ext-tab-btn active" onclick="switchExtTab('stock')">📦 Estoque</button>
+      <button class="ext-tab-btn" onclick="switchExtTab('create')">➕ Cadastrar</button>
+      <button class="ext-tab-btn" onclick="switchExtTab('reports')">📊 Relatórios</button>
+      <button class="ext-tab-btn" onclick="switchExtTab('config')">⚙️ Config</button>
+    </nav>
+
+    <!-- ABA 1: LISTAGEM DE ESTOQUE -->
+    <section id="extTabStock" class="ext-tab-content active">
+      <div class="ext-search-box">
+        <input type="text" id="extSearchInput" class="ext-input" placeholder="🔍 Buscar código, peça, marca..." oninput="onExtSearch()">
+      </div>
+
+      <div class="ext-quick-kpi">
+        <div class="mini-kpi">
+          <span>Total Itens</span>
+          <strong id="extKpiTotal">0</strong>
+        </div>
+        <div class="mini-kpi warn">
+          <span>Estoque Baixo</span>
+          <strong id="extKpiBaixo">0</strong>
+        </div>
+        <div class="mini-kpi danger">
+          <span>Zerados</span>
+          <strong id="extKpiZerado">0</strong>
+        </div>
+      </div>
+
+      <div id="extProductList" class="ext-product-list">
+        <!-- Renderizado dinamicamente -->
+      </div>
+    </section>
+
+    <!-- ABA 2: CADASTRAR PRODUTO -->
+    <section id="extTabCreate" class="ext-tab-content">
+      <form id="extCreateForm" onsubmit="handleExtCreateProduct(event)" class="ext-form-container">
+        <div class="ext-grid-2">
+          <div class="ext-form-group">
+            <label>Código *</label>
+            <input type="text" id="extNewCodigo" class="ext-input" required placeholder="EST-036">
+          </div>
+          <div class="ext-form-group">
+            <label>Categoria *</label>
+            <input type="text" id="extNewCategoria" class="ext-input" required placeholder="Armazenamento">
+          </div>
+        </div>
+
+        <div class="ext-form-group">
+          <label>Nome do Produto / Peça *</label>
+          <input type="text" id="extNewProduto" class="ext-input" required placeholder="SSD NVMe 1TB">
+        </div>
+
+        <div class="ext-grid-2">
+          <div class="ext-form-group">
+            <label>Marca</label>
+            <input type="text" id="extNewMarca" class="ext-input" placeholder="Kingston">
+          </div>
+          <div class="ext-form-group">
+            <label>Localização (Prateleira)</label>
+            <input type="text" id="extNewLocalizacao" class="ext-input" placeholder="A1-02">
+          </div>
+        </div>
+
+        <div class="ext-grid-3">
+          <div class="ext-form-group">
+            <label>Qtd. *</label>
+            <input type="number" id="extNewQtd" class="ext-input" required min="0" value="1" oninput="calculateExtMargem()">
+          </div>
+          <div class="ext-form-group">
+            <label>Est. Mín</label>
+            <input type="number" id="extNewMin" class="ext-input" min="0" value="3">
+          </div>
+          <div class="ext-form-group">
+            <label>Unidade</label>
+            <select id="extNewUnidade" class="ext-input">
+              <option value="UN">UN</option>
+              <option value="CX">CX</option>
+              <option value="PCT">PCT</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="ext-grid-2">
+          <div class="ext-form-group">
+            <label>Custo (R$)</label>
+            <input type="number" id="extNewCusto" class="ext-input" step="0.01" min="0" value="0.00" oninput="calculateExtMargem()">
+          </div>
+          <div class="ext-form-group">
+            <label>Venda (R$)</label>
+            <input type="number" id="extNewVenda" class="ext-input" step="0.01" min="0" value="0.00" oninput="calculateExtMargem()">
+          </div>
+        </div>
+
+        <div class="ext-margem-preview">
+          Margem calculada: <strong id="extMargemCalc">0.0%</strong>
+        </div>
+
+        <button type="submit" class="ext-btn ext-btn-success ext-btn-block" id="btnExtSaveProd">
+          💾 Salvar Produto no Estoque
+        </button>
+      </form>
+    </section>
+
+    <!-- ABA 3: RELATÓRIOS -->
+    <section id="extTabReports" class="ext-tab-content">
+      <div class="ext-reports-box">
+        <h3>📄 Emitir Relatórios Oficiais</h3>
+        <p>Baixe os relatórios em tempo real com dados sincronizados do estoque:</p>
+
+        <div class="ext-report-btn-group">
+          <button class="ext-report-card-btn pdf-btn" onclick="downloadExtReport('pdf')">
+            <span class="report-icon">📕</span>
+            <div>
+              <strong>Relatório em PDF</strong>
+              <small>Formato paisagem para impressão</small>
+            </div>
+            <span class="download-arrow">&darr;</span>
+          </button>
+
+          <button class="ext-report-card-btn excel-btn" onclick="downloadExtReport('excel')">
+            <span class="report-icon">📗</span>
+            <div>
+              <strong>Planilha Excel (.xlsx)</strong>
+              <small>20 colunas e resumo executivo</small>
+            </div>
+            <span class="download-arrow">&darr;</span>
+          </button>
+
+          <button class="ext-report-card-btn word-btn" onclick="downloadExtReport('word')">
+            <span class="report-icon">📘</span>
+            <div>
+              <strong>Documento Word (.docx)</strong>
+              <small>Relatório institucional formatado</small>
+            </div>
+            <span class="download-arrow">&darr;</span>
+          </button>
+        </div>
+
+        <button class="ext-btn ext-btn-outline ext-btn-block" onclick="openWebAppTab()" style="margin-top: 14px;">
+          🌐 Abrir Sistema Web Completo
+        </button>
+      </div>
+    </section>
+
+    <!-- ABA 4: CONFIGURAÇÕES -->
+    <section id="extTabConfig" class="ext-tab-content">
+      <div class="ext-config-box">
+        <h3>Sessão e Conexão</h3>
+        <p>Usuário ativo: <strong id="extActiveUser">-</strong></p>
+        <p>Perfil: <strong id="extActiveRole">-</strong></p>
+
+        <div class="ext-form-group" style="margin-top: 14px;">
+          <label>URL do Servidor</label>
+          <input type="url" id="extConfigServerUrl" class="ext-input" value="http://localhost:3000">
+        </div>
+        <button class="ext-btn ext-btn-primary ext-btn-block" onclick="saveExtServerUrl()">Salvar URL</button>
+
+        <hr style="margin: 20px 0; border: none; border-top: 1px solid #bfdbfe;">
+
+        <button class="ext-btn ext-btn-danger ext-btn-block" onclick="handleExtLogout()">
+          Sair da Conta
+        </button>
+      </div>
+    </section>
+  </div>
+
+  <!-- POPUP TOAST -->
+  <div id="extToast" class="ext-toast"></div>
+
+  <!-- SCRIPTS -->
+  <script src="socket.io.min.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
