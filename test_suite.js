@@ -120,6 +120,15 @@ async function runTests() {
   assert(dash.cards.valor_estoque && dash.cards.valor_estoque.valor > 30000, 'Admin recebe o valor total do estoque');
   assert(dash.cards.margem_media && typeof dash.cards.margem_media.valor === 'number', 'Admin recebe a margem média');
   assert(typeof dash.cards.itens_sem_saida.valor === 'number' && typeof dash.cards.estoque_baixo.valor === 'number', 'Cards de itens sem saída e estoque baixo presentes');
+  const risco = dash.cards.risco_ruptura;
+  assert(risco && typeof risco.valor === 'number' && risco.limiar_dias === 15 && risco.consumo_dias === 30, 'Card Risco de ruptura traz valor, limiar (15 dias) e janela de consumo (30 dias)');
+  assert(Array.isArray(risco.itens) && risco.itens.length === Math.min(risco.valor, 50), 'Lista de itens em risco coerente com a contagem do card');
+  assert(risco.itens.every(i => i.zerado || i.dias <= risco.limiar_dias), 'Todo item em risco está zerado ou esgota em até 15 dias');
+  assert(risco.itens.every((i, k, a) => k === 0 || a[k - 1].dias <= i.dias), 'Itens em risco ordenados do mais urgente para o menos urgente');
+  assert(risco.itens.every(i => i.sugestao >= 0 && i.consumo_diario > 0), 'Cada item em risco tem consumo diário e reposição sugerida válidos');
+  assert(risco.valor === 0 ? risco.menor_prazo_dias === null && risco.zerados === 0 : (risco.menor_prazo_dias === null) === (risco.zerados === risco.valor),
+    'Menor prazo só é nulo quando todos os itens em risco já estão zerados');
+  assert(typeof dash.cards.itens_sem_saida.valor_parado === 'number' && dash.cards.itens_sem_saida.valor_parado >= 0, 'Admin recebe o valor parado dos itens sem saída');
   assert(Array.isArray(dash.serie) && dash.serie.length === 6, `Série do gráfico com 6 meses (recebidos: ${dash.serie.length})`);
   assert(Array.isArray(dash.ranking) && dash.ranking.length <= 5, 'Ranking limitado a 5 itens');
   assert(Array.isArray(dash.sem_saida) && dash.sem_saida.length <= 5, 'Lista de itens sem saída limitada a 5');
@@ -128,6 +137,8 @@ async function runTests() {
   const dashUser = await request('/api/dashboard', { token: userToken });
   assert(dashUser.statusCode === 200 && !('valor_estoque' in dashUser.body.data.cards) && !('margem_media' in dashUser.body.data.cards),
     'Operador NÃO recebe valores financeiros do painel');
+  assert(dashUser.body.data.cards.itens_sem_saida.valor_parado === undefined && dashUser.body.data.cards.risco_ruptura.valor >= 0,
+    'Operador NÃO recebe o valor parado, mas vê o Risco de ruptura');
 
   const dashBadParams = await request('/api/dashboard?period=abc&months=999', { token: adminToken });
   assert(dashBadParams.statusCode === 200 && dashBadParams.body.data.periodo_dias === 30 && dashBadParams.body.data.meses === 6,
@@ -149,6 +160,14 @@ async function runTests() {
   const sumValues = Number(salesData.itens.reduce((s, i) => s + i.valor, 0).toFixed(2));
   assert(salesData.total.valor === sumValues, 'Valor total confere com a soma dos itens');
   assert(salesData.itens.every((item, i, arr) => i === 0 || arr[i - 1].quantidade >= item.quantidade), 'Itens ordenados por quantidade vendida (maior primeiro)');
+
+  const lastPoint = dash.serie[dash.serie.length - 1];
+  assert(typeof lastPoint.entradas === 'number' && lastPoint.entradas >= 0, 'Série mensal traz as entradas (reposição)');
+  assert(typeof lastPoint.faturamento === 'number' && lastPoint.faturamento >= 0, 'Admin recebe o faturamento mensal na série');
+  assert(lastPoint.valor === salesData.total.quantidade && Math.abs(lastPoint.faturamento - salesData.total.valor) < 0.01,
+    'Ponto do gráfico (unidades e faturamento) bate com o detalhe de vendas do mês');
+  assert(dashUser.body.data.serie.every(p => p.faturamento === undefined && typeof p.entradas === 'number'),
+    'Operador NÃO recebe faturamento na série (mas vê entradas e saídas)');
 
   const salesUser = await request(`/api/dashboard/sales?month=${monthKey}`, { token: userToken });
   assert(salesUser.statusCode === 200 && salesUser.body.data.total.valor === undefined && salesUser.body.data.itens.every(i => i.valor === undefined),

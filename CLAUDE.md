@@ -56,9 +56,10 @@ src/
 └── public/                    Frontend web
     ├── index.html             Página única: dashboard, tabela, movimentações, usuários, todos os modais
     ├── css/styles.css         Design system Estoque Pro: tokens em :root + todos os componentes
+    ├── favicon.svg            Logo do sistema (mesma da sidebar: caixa branca sobre quadrado azul #2563EB); apple-touch-icon.png é a versão 180px
     └── js/
         ├── icons.js           Ícones Lucide embutidos: <i data-ic="box"></i> no HTML, icon('box') em template string
-        ├── charts.js          renderAreaChart(): gráfico de área em SVG puro (sem biblioteca)
+        ├── charts.js          renderAreaChart(): gráfico mensal em SVG puro (1 série = área preenchida; 2+ = linhas com legenda)
         ├── auth.js            Login, sessão (localStorage: estoque_token, estoque_user), visibilidade por perfil
         ├── app.js             Toda a lógica das telas (carregamento, tabelas, modais, relatórios, upload)
         └── socket-client.js   Conexão WebSocket e atualização das telas ao receber eventos
@@ -130,8 +131,14 @@ Fonte da verdade visual: `src/Estoque-Pro-System.html`. Os valores abaixo já es
 ### Painel Geral (`GET /api/dashboard`)
 - Cálculo em `dashboard.service.js` (`buildOverview`, função pura: recebe produtos e movimentações). O saldo de 30 dias atrás é **reconstruído desfazendo as movimentações** (`quantidade_nova - quantidade_anterior`); custo e preço usam o valor atual (não há histórico de preço). Sem produtos existentes naquela data, a variação vem `null` e a tela mostra "Sem histórico para comparar".
 - "Itens sem saída" = produtos com saldo > 0 sem movimentação `SAIDA` nos últimos `period` dias (se nunca saiu, conta a partir de `data_entrada`, aceita `dd/mm/aaaa` ou ISO, com `created_at` como reserva).
-- "Estoque baixo" = status `ESTOQUE BAIXO` + `SEM ESTOQUE`. Variações de "sem saída" e "estoque baixo" são absolutas; margem em p.p.; valor do estoque em %.
+- **Risco de ruptura** (card que substituiu "Estoque baixo"): item em risco = tem saída nos últimos 30 dias **e** (já zerou **ou** esgota em até 15 dias). Prazo = `saldo × 30 ÷ unidades vendidas em 30 dias` (calculado com o total vendido, não com a divisão por dia, para não errar na borda de 15,0). Itens parados não entram (sem ritmo não há prazo). O subtexto do card mostra o **menor prazo** (pior caso) e quantos já zeraram; o link "Ver detalhes" abre o modal com saldo, consumo/dia, prazo, giro 30d e reposição sugerida (ordenado do mais urgente). Limiar e janela ficam nas constantes `LIMIAR_RUPTURA_DIAS` e `CONSUMO_DIAS` do `dashboard.service.js`.
+- **Reposição sugerida** = cobrir 30 dias de consumo (nunca menos que o estoque mínimo), limitada ao estoque máximo quando houver. **Giro 30d** = unidades vendidas ÷ saldo médio (saldo atual e de 30 dias atrás).
+- **Itens sem saída**: número = quantidade; subtexto = capital parado **a custo** (`saldo × preço de custo`, só admin; operador vê "há N+ dias sem saída").
+- A variação vs. período anterior desses dois cards ficou no tooltip do subtexto (e no modal de risco). Variações: contagens são absolutas; margem em p.p.; valor do estoque em %.
+- `cards.estoque_baixo` (status abaixo do mínimo cadastrado) continua na resposta e alimenta só o **sino** do topo, que abre o catálogo filtrado por `ESTOQUE BAIXO`.
 - Clique (ou Enter) num ponto do gráfico abre o modal "Vendas de <mês>" (`openMonthSales` em `app.js` → `GET /api/dashboard/sales`): lista numerada por quantidade vendida, com total no final. O valor vendido é `quantidade × preço de venda ATUAL` (sem histórico de preço) e só vai para admin. O total de unidades do modal sempre bate com o ponto do gráfico.
+- **Cards do topo reposicionáveis** (`#statGrid`, cada card tem `data-card`): arraste com o mouse (reordena ao vivo, com animação), **segure e arraste no toque** ou use **Alt + setas** no card focado. A ordem fica no `localStorage` do navegador, **por usuário** (`estoque_cards_order_<id>`), e o botão "Restaurar ordem dos cards" no cabeçalho volta ao padrão (`STAT_CARD_DEFAULT_ORDER` em `app.js`). Card novo: dê um `data-card` único, acrescente-o a essa constante e mantenha `tabindex="0"`. O arraste usa **eventos de ponteiro (`initStatCards` em `app.js`), não o drag-and-drop nativo do HTML5**: o nativo desenha uma imagem fantasma translúcida que o CSS não controla e não funciona em toque. Aqui o que acompanha o cursor é uma cópia opaca do card (`.drag-ghost`) e o original vira um encaixe tracejado (`.drag-slot`). Não reintroduza o atributo `draggable`. "Ver detalhes" e outros botões dentro do card continuam clicáveis (não iniciam arraste).
+- **Seletor de métrica do gráfico** (`#metricSelect`, config em `CHART_METRICS` no `app.js`): *Itens vendidos* (padrão), *Faturamento (R$)* e *Entradas x Saídas*. Mesmo card, mesmo seletor de período, título dinâmico. Trocar a métrica **não** refaz a requisição: `serie[]` já traz `valor` (unidades vendidas), `entradas` e, só para admin, `faturamento`. Faturamento = `unidades vendidas × preço de venda ATUAL` e a opção some do seletor para o operador. Entradas x Saídas ignora `AJUSTE` e não é clicável (o modal de vendas só faz sentido para saídas). Margem e giro ficam fora do seletor de propósito (candidatos a Relatórios).
 - `valor_estoque` e `margem_media` **só vão na resposta para admin** (o operador vê cards `.user-only` sem valores financeiros).
 - A seção "Itens por categoria" do painel antigo foi removida (o alvo visual não a tem); `/products/stats` continua existindo.
 
@@ -179,7 +186,7 @@ Respostas seguem o formato `{ success: boolean, ... }` com `error` em caso de fa
 `test_suite.js` é um script único que faz chamadas HTTP e escuta Socket.io contra `localhost:3000`, **sem mock**. Isso significa que:
 - O servidor precisa estar rodando antes (`npm start` em outro terminal).
 - Ele cria, altera e apaga dados no banco ativo. **Não rode contra um banco Supabase compartilhado/de produção.**
-- Baseline atual: **51 testes passando** (o README ainda diz 29, de antes do painel). Confirme rodando antes de alterar.
+- Baseline atual: **63 testes passando** (o README ainda diz 29, de antes do painel). Confirme rodando antes de alterar.
 - `TEST_PORT` muda a porta alvo (padrão 3000). Combine com `SQLITE_PATH` para testar num banco descartável.
 
 ## Trabalho em dupla (Git)

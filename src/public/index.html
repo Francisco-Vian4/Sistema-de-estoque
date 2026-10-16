@@ -4,6 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Controle de Estoque Pro — Assistência Técnica</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
   <!-- Google Fonts & Font Awesome -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -171,6 +173,7 @@
           <p class="page-subtitle" id="pageSubtitle">Visão principal do estoque</p>
         </div>
         <div class="page-actions" id="pageActions">
+          <button type="button" class="link-btn" id="resetLayoutBtn" hidden onclick="resetCardOrder()">Restaurar ordem dos cards</button>
           <label class="select-pill">
             <i data-ic="calendar"></i>
             <select id="periodSelect" aria-label="Período de análise" onchange="onDashboardFilterChange()">
@@ -188,8 +191,9 @@
         <!-- 1. ABA DASHBOARD -->
         <section id="tab-dashboard" class="tab-pane active">
           <!-- CARDS DE INDICADORES (máx. 4 por linha) -->
-          <div class="stat-grid">
-            <div class="stat-card admin-only">
+          <div class="stat-grid" id="statGrid">
+            <div class="stat-card admin-only" data-card="valor" tabindex="0">
+              <span class="stat-grip" title="Arraste para reposicionar (ou Alt + setas)" aria-hidden="true"><i data-ic="grip-vertical"></i></span>
               <div class="stat-top">
                 <div class="stat-icon tone-blue"><i data-ic="database"></i></div>
                 <div>
@@ -200,7 +204,8 @@
               <div class="stat-delta" id="kpiValorEstoqueDelta"></div>
             </div>
 
-            <div class="stat-card admin-only">
+            <div class="stat-card admin-only" data-card="margem" tabindex="0">
+              <span class="stat-grip" title="Arraste para reposicionar (ou Alt + setas)" aria-hidden="true"><i data-ic="grip-vertical"></i></span>
               <div class="stat-top">
                 <div class="stat-icon tone-green"><i data-ic="trending-up"></i></div>
                 <div>
@@ -211,7 +216,8 @@
               <div class="stat-delta" id="kpiMargemDelta"></div>
             </div>
 
-            <div class="stat-card user-only">
+            <div class="stat-card user-only" data-card="itens" tabindex="0">
+              <span class="stat-grip" title="Arraste para reposicionar (ou Alt + setas)" aria-hidden="true"><i data-ic="grip-vertical"></i></span>
               <div class="stat-top">
                 <div class="stat-icon tone-blue"><i data-ic="package"></i></div>
                 <div>
@@ -222,7 +228,8 @@
               <div class="stat-delta">Total de produtos únicos</div>
             </div>
 
-            <div class="stat-card user-only">
+            <div class="stat-card user-only" data-card="unidades" tabindex="0">
+              <span class="stat-grip" title="Arraste para reposicionar (ou Alt + setas)" aria-hidden="true"><i data-ic="grip-vertical"></i></span>
               <div class="stat-top">
                 <div class="stat-icon tone-green"><i data-ic="box"></i></div>
                 <div>
@@ -233,7 +240,8 @@
               <div class="stat-delta">Total de peças em prateleira</div>
             </div>
 
-            <div class="stat-card">
+            <div class="stat-card" data-card="sem-saida" tabindex="0">
+              <span class="stat-grip" title="Arraste para reposicionar (ou Alt + setas)" aria-hidden="true"><i data-ic="grip-vertical"></i></span>
               <div class="stat-top">
                 <div class="stat-icon tone-amber"><i data-ic="package"></i></div>
                 <div>
@@ -241,18 +249,22 @@
                   <div class="stat-value" id="kpiSemSaida">0</div>
                 </div>
               </div>
-              <div class="stat-delta" id="kpiSemSaidaDelta"></div>
+              <div class="stat-delta" id="kpiSemSaidaSub"></div>
             </div>
 
-            <div class="stat-card">
+            <div class="stat-card" data-card="risco" tabindex="0">
+              <span class="stat-grip" title="Arraste para reposicionar (ou Alt + setas)" aria-hidden="true"><i data-ic="grip-vertical"></i></span>
               <div class="stat-top">
                 <div class="stat-icon tone-red"><i data-ic="alert-triangle"></i></div>
                 <div>
-                  <div class="stat-label">Estoque baixo</div>
-                  <div class="stat-value" id="kpiEstoqueBaixo">0</div>
+                  <div class="stat-label">Risco de ruptura</div>
+                  <div class="stat-value" id="kpiRisco">0</div>
                 </div>
               </div>
-              <div class="stat-delta" id="kpiEstoqueBaixoDelta"></div>
+              <div class="stat-delta">
+                <span id="kpiRiscoSub"></span>
+                <button type="button" class="link-btn" onclick="openRiskDetails()">Ver detalhes</button>
+              </div>
             </div>
           </div>
 
@@ -260,7 +272,16 @@
           <div class="dash-grid">
             <div class="panel col-8">
               <div class="panel-head">
-                <h3 class="panel-title">Itens mais vendidos ao longo do tempo</h3>
+                <h3 class="panel-title" id="chartTitle">Itens mais vendidos ao longo do tempo</h3>
+                <div class="panel-tools">
+                <label class="select-pill compact">
+                  <select id="metricSelect" aria-label="Métrica do gráfico" onchange="onMetricChange()">
+                    <option value="vendidos" selected>Itens vendidos</option>
+                    <option value="faturamento">Faturamento (R$)</option>
+                    <option value="fluxo">Entradas x Saídas</option>
+                  </select>
+                  <i data-ic="chevron-down" class="chev"></i>
+                </label>
                 <label class="select-pill compact">
                   <select id="monthsSelect" aria-label="Janela do gráfico" onchange="onDashboardFilterChange()">
                     <option value="3">Últimos 3 meses</option>
@@ -269,6 +290,7 @@
                   </select>
                   <i data-ic="chevron-down" class="chev"></i>
                 </label>
+                </div>
               </div>
               <div class="chart-wrap" id="salesChart"></div>
             </div>
@@ -543,6 +565,21 @@
         </section>
       </div>
     </main>
+  </div>
+
+  <!-- MODAL: RISCO DE RUPTURA (aberto pelo link "Ver detalhes" do card) -->
+  <div id="riskModal" class="modal-overlay">
+    <div class="modal-box modal-lg">
+      <div class="modal-header">
+        <h3>Risco de ruptura</h3>
+        <button class="modal-close" aria-label="Fechar" onclick="closeModal('riskModal')">&times;</button>
+      </div>
+      <div class="modal-body" id="riskBody"></div>
+      <div class="modal-footer">
+        <span class="modal-note" id="riskNote"></span>
+        <button type="button" class="btn btn-outline" onclick="closeModal('riskModal')">Fechar</button>
+      </div>
+    </div>
   </div>
 
   <!-- MODAL: VENDAS DO MÊS (abre ao clicar num ponto do gráfico do painel) -->

@@ -571,6 +571,48 @@ button, input, select, textarea { font-family: inherit; }
   transition: transform var(--duration-base) var(--ease-out-expo), box-shadow var(--duration-base) var(--ease-default);
 }
 .stat-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-hover); }
+
+/* Arrastar e soltar: alça discreta que aparece no hover/foco; card arrastado fica translúcido */
+.stat-card { position: relative; cursor: grab; }
+.stat-card:active { cursor: grabbing; }
+/* Card original durante o arraste: vira um "encaixe" vazio que mostra onde vai cair */
+.stat-card.drag-slot,
+.stat-card.drag-slot:hover {
+  transform: none;
+  background: var(--blue-50);
+  border: 1px dashed var(--blue-300);
+  box-shadow: none;
+}
+.stat-card.drag-slot > * { visibility: hidden; }
+/* Cópia opaca que acompanha o cursor (no lugar da imagem translúcida do arraste nativo) */
+.drag-ghost {
+  position: fixed;
+  z-index: 1500;
+  margin: 0;
+  pointer-events: none;
+  cursor: grabbing;
+  transition: none;
+  transform: scale(1.02);
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.18), 0 4px 12px rgba(15, 23, 42, 0.08);
+}
+.drag-ghost:hover { transform: scale(1.02); }
+.drag-ghost.dropping { transform: none; box-shadow: var(--shadow-card); }
+.drag-ghost .stat-grip { opacity: 0; }
+.is-dragging-card,
+.is-dragging-card * { cursor: grabbing !important; user-select: none !important; }
+.stat-grip {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  font-size: 16px;
+  color: var(--slate-400);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--duration-base) var(--ease-default);
+}
+.stat-card:hover .stat-grip,
+.stat-card:focus-visible .stat-grip { opacity: 1; }
 .stat-top { display: flex; align-items: center; gap: var(--space-4); }
 .stat-top > div:last-child { min-width: 0; }
 .stat-icon {
@@ -607,6 +649,21 @@ button, input, select, textarea { font-family: inherit; }
 }
 .stat-delta strong { display: inline-flex; align-items: center; gap: 2px; font-size: 13px; font-weight: 600; }
 .stat-delta strong .ic { font-size: 16px; }
+.stat-delta strong { color: var(--slate-900); }
+.stat-delta strong.bad { color: var(--danger-text); }
+.stat-delta .link-btn { margin-left: auto; }
+.link-btn {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--blue-600);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.link-btn:hover { text-decoration: underline; }
+.modal-summary { margin-bottom: var(--space-3); font-size: 13px; color: var(--slate-600); }
+.modal-summary strong { color: var(--slate-900); }
 .stat-delta .good { color: var(--success-text); }
 .stat-delta .bad { color: var(--danger-text); }
 .stat-delta .flat { color: var(--slate-500); }
@@ -632,9 +689,11 @@ button, input, select, textarea { font-family: inherit; }
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: var(--space-3);
   margin-bottom: var(--space-4);
 }
+.panel-tools { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); }
 .panel-title,
 .card-header h3 { font-size: 18px; line-height: 24px; font-weight: 600; letter-spacing: -0.01em; display: flex; align-items: center; gap: var(--space-2); }
 .card-body { padding: 0; }
@@ -682,6 +741,20 @@ button, input, select, textarea { font-family: inherit; }
 }
 .chart-tooltip.show { opacity: 1; }
 .chart-tooltip em { display: block; margin-top: 2px; font-style: normal; font-size: 11px; color: var(--blue-600); }
+.chart-legend {
+  position: absolute;
+  top: 0;
+  right: 20px;
+  display: flex;
+  gap: var(--space-4);
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--slate-600);
+}
+.legend-item { display: inline-flex; align-items: center; gap: 6px; }
+.legend-line { display: inline-block; width: 14px; height: 3px; border-radius: 2px; }
+.chart-tooltip .tt-row { display: flex; align-items: center; gap: 6px; }
+.chart-tooltip .tt-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 .chart-hit.clickable { cursor: pointer; outline: none; }
 .chart-hit.clickable:focus-visible { fill: rgba(37, 99, 235, 0.06); }
 .chart-tooltip strong { display: block; font-weight: 600; }

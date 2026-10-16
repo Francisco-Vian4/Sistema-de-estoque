@@ -1,6 +1,10 @@
 const { calculateStatus } = require('./excel-import.service');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+// Risco de ruptura: consumo médio dos últimos 30 dias; "em risco" = esgota em até 15 dias (ou já zerou e vendia)
+const CONSUMO_DIAS = 30;
+const LIMIAR_RUPTURA_DIAS = 15;
 const MONTH_LABELS = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
 // SQLite devolve 'YYYY-MM-DD HH:MM:SS' (UTC, sem fuso); o PostgreSQL devolve Date.
@@ -59,7 +63,8 @@ function buildOverview(products, movements, { period = 30, months = 6, now = new
   const rows = products.map(p => {
     const createdAt = toDate(p.created_at);
     const list = movsByProduct.get(p.id) || [];
-    const saidas = list.filter(m => m.tipo === 'SAIDA').map(m => m.ts);
+    const saidaMovs = list.filter(m => m.tipo === 'SAIDA');
+    const saidas = saidaMovs.map(m => m.ts);
     return {
       p,
       qtd: Number(p.qtd_estoque) || 0,
@@ -70,11 +75,18 @@ function buildOverview(products, movements, { period = 30, months = 6, now = new
       createdMs: createdAt ? createdAt.getTime() : 0,
       entradaMs: (parseEntrada(p) || now).getTime(),
       list,
-      saidas
+      saidas,
+      saidaQtd: saidaMovs.map(m => ({ ts: m.ts, q: Number(m.quantidade) || 0 }))
     };
   });
 
   const qtyAt = (r, t) => r.qtd - r.list.filter(m => m.ts > t).reduce((acc, m) => acc + m.delta, 0);
+
+  // Unidades vendidas na janela de 30 dias que termina em t. Os prazos usam esse total (e não a divisão
+  // por dia) para evitar erro de ponto flutuante na borda: 10 un. com 20 vendidas = exatamente 15 dias.
+  const vendidoNaJanela = (r, t) =>
+    r.saidaQtd.filter(s => s.ts <= t && s.ts > t - CONSUMO_DIAS * DAY_MS).reduce((acc, s) => acc + s.q, 0);
+  const diasDeCobertura = (qtd, vendido) => (qtd * CONSUMO_DIAS) / vendido;
 
   // Foto do estoque em um instante t: só produtos que já existiam e saldo reconstruído.
   function snapshot(t) {
@@ -88,12 +100,31 @@ function buildOverview(products, movements, { period = 30, months = 6, now = new
     let venda = 0;
     let baixo = 0;
     let semSaida = 0;
+    let parado = 0;
+    let risco = 0;
+    let zerados = 0;
+    let menorPrazo = null;
     for (const { r, qtd } of items) {
       custo += qtd * r.custo;
       venda += qtd * r.venda;
       const st = calculateStatus(qtd, r.min, r.max);
       if (st === 'ESTOQUE BAIXO' || st === 'SEM ESTOQUE') baixo++;
-      if (qtd > 0 && daysIdle(r, t) >= period) semSaida++;
+      if (qtd > 0 && daysIdle(r, t) >= period) {
+        semSaida++;
+        parado += qtd * r.custo;
+      }
+      // Só dá para projetar prazo de quem tem saída recente; item parado não entra no risco de ruptura
+      const vendido = vendidoNaJanela(r, t);
+      if (vendido > 0) {
+        if (qtd <= 0) {
+          risco++;
+          zerados++;
+        } else if (diasDeCobertura(qtd, vendido) <= LIMIAR_RUPTURA_DIAS) {
+          risco++;
+          const dias = diasDeCobertura(qtd, vendido);
+          menorPrazo = menorPrazo === null ? dias : Math.min(menorPrazo, dias);
+        }
+      }
     }
     return {
       existentes: items.length,
@@ -101,7 +132,11 @@ function buildOverview(products, movements, { period = 30, months = 6, now = new
       margem: custo > 0 ? ((venda - custo) / custo) * 100 : 0,
       temCusto: custo > 0,
       baixo,
-      semSaida
+      semSaida,
+      parado,
+      risco,
+      zerados,
+      menorPrazo
     };
   }
 
@@ -120,14 +155,51 @@ function buildOverview(products, movements, { period = 30, months = 6, now = new
     total_itens: products.length,
     total_unidades: rows.reduce((acc, r) => acc + r.qtd, 0),
     itens_sem_saida: { valor: atual.semSaida, delta: temBase ? atual.semSaida - anterior.semSaida : null },
+    risco_ruptura: {
+      valor: atual.risco,
+      delta: temBase ? atual.risco - anterior.risco : null,
+      menor_prazo_dias: atual.menorPrazo === null ? null : Number(atual.menorPrazo.toFixed(1)),
+      zerados: atual.zerados,
+      limiar_dias: LIMIAR_RUPTURA_DIAS,
+      consumo_dias: CONSUMO_DIAS,
+      itens: []
+    },
+    // Mantido para o sino do topo (status abaixo do mínimo cadastrado)
     estoque_baixo: {
       valor: atual.baixo,
       delta: temBase ? atual.baixo - anterior.baixo : null,
       sem_estoque: rows.filter(r => r.qtd <= 0).length
     }
   };
+  // Itens em risco de ruptura (modal "Ver detalhes"): mais urgentes primeiro
+  cards.risco_ruptura.itens = rows
+    .map(r => {
+      const vendido = vendidoNaJanela(r, nowMs);
+      if (vendido <= 0 || (r.qtd > 0 && diasDeCobertura(r.qtd, vendido) > LIMIAR_RUPTURA_DIAS)) return null;
+      const saldoMedio = (r.qtd + Math.max(0, qtyAt(r, nowMs - CONSUMO_DIAS * DAY_MS))) / 2;
+      // Reposição sugerida: cobrir 30 dias de consumo (nunca menos que o mínimo), respeitando o máximo cadastrado
+      let sugestao = Math.max(0, Math.max(vendido, r.min) - r.qtd);
+      if (r.max > r.qtd) sugestao = Math.min(sugestao, r.max - r.qtd);
+      return {
+        id: r.p.id,
+        codigo: r.p.codigo,
+        produto: r.p.produto,
+        unidade: r.p.unidade || 'UN',
+        saldo: r.qtd,
+        consumo_diario: Number((vendido / CONSUMO_DIAS).toFixed(2)),
+        dias: r.qtd > 0 ? Number(diasDeCobertura(r.qtd, vendido).toFixed(1)) : 0,
+        zerado: r.qtd <= 0,
+        giro: saldoMedio > 0 ? Number((vendido / saldoMedio).toFixed(1)) : null,
+        sugestao
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.dias - b.dias || a.produto.localeCompare(b.produto))
+    .slice(0, 50);
+
   // Valores financeiros só saem do backend para administradores.
   if (isAdmin) {
+    cards.itens_sem_saida.valor_parado = Number(atual.parado.toFixed(2));
     cards.valor_estoque = {
       valor: Number(atual.valor.toFixed(2)),
       delta_percent: temBase ? pct(atual.valor, anterior.valor) : null
@@ -145,14 +217,25 @@ function buildOverview(products, movements, { period = 30, months = 6, now = new
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
     const key = d.getFullYear() * 12 + d.getMonth();
     monthIndex.set(key, serie.length);
-    serie.push({ label: MONTH_LABELS[d.getMonth()], ano: d.getFullYear(), chave: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`, valor: 0 });
+    serie.push({ label: MONTH_LABELS[d.getMonth()], ano: d.getFullYear(), chave: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`, valor: 0, entradas: 0, ...(isAdmin ? { faturamento: 0 } : {}) });
   }
+  // valor = unidades vendidas (SAIDA); entradas = unidades repostas (ENTRADA); AJUSTE não entra em nenhum dos dois.
+  // faturamento (só admin) = unidades vendidas × preço de venda ATUAL (não há histórico de preço).
+  const precoPorProduto = new Map(rows.map(r => [r.p.id, r.venda]));
   for (const m of movs) {
-    if (m.tipo !== 'SAIDA') continue;
+    if (m.tipo !== 'SAIDA' && m.tipo !== 'ENTRADA') continue;
     const d = new Date(m.ts);
     const idx = monthIndex.get(d.getFullYear() * 12 + d.getMonth());
-    if (idx !== undefined) serie[idx].valor += Number(m.quantidade) || 0;
+    if (idx === undefined) continue;
+    const q = Number(m.quantidade) || 0;
+    if (m.tipo === 'ENTRADA') {
+      serie[idx].entradas += q;
+    } else {
+      serie[idx].valor += q;
+      if (isAdmin) serie[idx].faturamento += q * (precoPorProduto.get(m.produto_id) || 0);
+    }
   }
+  if (isAdmin) serie.forEach(p => { p.faturamento = Number(p.faturamento.toFixed(2)); });
 
   const brief = r => ({
     id: r.p.id,

@@ -3,6 +3,7 @@ let categoriesList = [];
 let searchDebounceTimeout = null;
 
 document.addEventListener('DOMContentLoaded', () => {
+  initStatCards();
   initAuth();
   initSocketClient();
 
@@ -66,8 +67,30 @@ function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 }
 
-function formatBRL(value) {
-  return `R$ ${Number(value || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+function formatBRL(value, decimals = 2) {
+  return `R$ ${Number(value || 0).toLocaleString('pt-BR', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}`;
+}
+
+// Variação em texto simples (para tooltips): "+1 vs. 30 dias atrás"
+function deltaPlain(value, periodDays) {
+  if (value === null || value === undefined) return 'Sem histórico para comparar';
+  if (value === 0) return `Sem variação vs. ${periodDays} dias atrás`;
+  return `${value > 0 ? '+' : '-'}${Math.abs(value).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} vs. ${periodDays} dias atrás`;
+}
+
+function formatDays(days) {
+  if (days < 1) return 'menos de 1 dia';
+  const n = Math.round(days);
+  return `${n} ${n === 1 ? 'dia' : 'dias'}`;
+}
+
+// Subtexto do card Risco de ruptura: prazo do item mais urgente (pior caso)
+function riskSubText(risk) {
+  const zerados = risk.zerados > 0 ? `${risk.zerados} já zerado${risk.zerados > 1 ? 's' : ''}` : '';
+  if (risk.valor === 0) return `Nenhum item esgota em ${risk.limiar_dias} dias`;
+  if (risk.menor_prazo_dias === null) return zerados;
+  const prazo = `<strong class="bad">esgota em ~${formatDays(risk.menor_prazo_dias)}</strong>`;
+  return zerados ? `${prazo} · ${zerados}` : prazo;
 }
 
 function unitLabel(unit) {
@@ -112,8 +135,194 @@ function deltaHtml(value, { unit = '', higherIsBetter = true, periodDays = 30 } 
   return `<strong class="${good ? 'good' : 'bad'}">${icon(up ? 'arrow-up-right' : 'arrow-down-right')} ${text}</strong>${label}`;
 }
 
+// ---------- Cards do topo: arrastar e soltar para reposicionar ----------
+// A ordem fica salva no navegador, por usuário (localStorage). Teclado: Alt + setas move o card focado.
+const STAT_CARD_DEFAULT_ORDER = ['valor', 'margem', 'itens', 'unidades', 'sem-saida', 'risco'];
+let draggingCard = null;
+let cardOrderAppliedFor = null;
+
+function cardOrderKey() {
+  return currentUser ? `estoque_cards_order_${currentUser.id}` : null;
+}
+
+function readCardOrder() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(cardOrderKey()));
+    return Array.isArray(saved) ? saved : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function currentCardOrder() {
+  return [...document.querySelectorAll('#statGrid .stat-card')].map(card => card.dataset.card);
+}
+
+function updateResetLayoutButton() {
+  document.getElementById('resetLayoutBtn').hidden = currentCardOrder().join() === STAT_CARD_DEFAULT_ORDER.join();
+}
+
+function saveCardOrder() {
+  try {
+    localStorage.setItem(cardOrderKey(), JSON.stringify(currentCardOrder()));
+  } catch (e) { /* armazenamento bloqueado: a ordem vale só até recarregar */ }
+  updateResetLayoutButton();
+}
+
+// Reordena o DOM conforme a lista (ids desconhecidos ficam no fim, na ordem atual)
+function applyCardOrder(order) {
+  const grid = document.getElementById('statGrid');
+  const cards = new Map([...grid.querySelectorAll('.stat-card')].map(card => [card.dataset.card, card]));
+  const wanted = [...order.filter(id => cards.has(id)), ...[...cards.keys()].filter(id => !order.includes(id))];
+  wanted.forEach(id => grid.appendChild(cards.get(id)));
+  updateResetLayoutButton();
+}
+
+// Chamado a cada render do painel; só reaplica quando muda o usuário e nunca no meio de um arraste
+function restoreCardOrder() {
+  if (!currentUser || draggingCard || cardOrderAppliedFor === currentUser.id) return;
+  applyCardOrder(readCardOrder() || STAT_CARD_DEFAULT_ORDER);
+  cardOrderAppliedFor = currentUser.id;
+}
+
+function resetCardOrder() {
+  try {
+    localStorage.removeItem(cardOrderKey());
+  } catch (e) { /* sem armazenamento: nada a limpar */ }
+  moveWithAnimation(document.getElementById('statGrid'), () => applyCardOrder(STAT_CARD_DEFAULT_ORDER));
+}
+
+// Troca de lugar com animação (FLIP): os outros cards deslizam até a nova posição
+function moveWithAnimation(grid, mutate) {
+  const cards = [...grid.querySelectorAll('.stat-card')].filter(card => card.offsetParent !== null);
+  const before = new Map(cards.map(card => [card, card.getBoundingClientRect()]));
+  mutate();
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  cards.forEach(card => {
+    const from = before.get(card);
+    const to = card.getBoundingClientRect();
+    const dx = from.left - to.left;
+    const dy = from.top - to.top;
+    if (dx || dy) {
+      card.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'none' }], { duration: 200, easing: 'cubic-bezier(.16, 1, .3, 1)' });
+    }
+  });
+}
+
+// Arraste feito com eventos de ponteiro (e não com o drag-and-drop nativo do HTML5): o que acompanha o cursor é
+// uma cópia opaca do próprio card, e não a "imagem fantasma" translúcida do navegador. Funciona com mouse e toque.
+function initStatCards() {
+  const grid = document.getElementById('statGrid');
+  const DRAG_THRESHOLD = 5; // px de movimento antes de começar a arrastar (evita arrastar sem querer ao clicar)
+  const TOUCH_CANCEL = 10;  // toque: se mexer antes do tempo de segurar, o usuário está rolando a página
+  const LONG_PRESS_MS = 250; // toque: segurar o card por um instante para arrastar
+  let pending = null; // pointerdown ainda sem arraste
+  let drag = null;    // arraste em andamento
+  const blockTouchScroll = e => e.preventDefault();
+
+  grid.addEventListener('pointerdown', e => {
+    const card = e.target.closest('.stat-card');
+    if (!card || (e.pointerType === 'mouse' && e.button !== 0)) return;
+    if (e.target.closest('button, a, input, select, textarea')) return; // "Ver detalhes" continua clicável
+    pending = { card, id: e.pointerId, x: e.clientX, y: e.clientY, type: e.pointerType, timer: null };
+    if (e.pointerType !== 'mouse') {
+      pending.timer = setTimeout(() => { if (pending) beginDrag(pending); }, LONG_PRESS_MS);
+    }
+  });
+
+  function beginDrag(p) {
+    clearTimeout(p.timer);
+    const rect = p.card.getBoundingClientRect();
+    const ghost = p.card.cloneNode(true);
+    ghost.querySelectorAll('[id]').forEach(el => el.removeAttribute('id'));
+    ['data-card', 'tabindex'].forEach(attr => ghost.removeAttribute(attr));
+    ghost.setAttribute('aria-hidden', 'true');
+    ghost.classList.add('drag-ghost');
+    Object.assign(ghost.style, { width: `${rect.width}px`, height: `${rect.height}px`, left: `${rect.left}px`, top: `${rect.top}px` });
+    document.body.appendChild(ghost);
+
+    p.card.classList.add('drag-slot'); // o card original vira o "encaixe" que mostra onde vai cair
+    document.body.classList.add('is-dragging-card');
+    draggingCard = p.card;
+    drag = { card: p.card, ghost, dx: p.x - rect.left, dy: p.y - rect.top };
+    if (p.type !== 'mouse') document.addEventListener('touchmove', blockTouchScroll, { passive: false });
+    pending = null;
+  }
+
+  window.addEventListener('pointermove', e => {
+    if (pending && e.pointerId === pending.id) {
+      const moved = Math.hypot(e.clientX - pending.x, e.clientY - pending.y);
+      if (pending.type === 'mouse') {
+        if (moved > DRAG_THRESHOLD) beginDrag(pending);
+      } else if (moved > TOUCH_CANCEL) {
+        clearTimeout(pending.timer);
+        pending = null;
+      }
+    }
+    if (!drag) return;
+
+    drag.ghost.style.left = `${e.clientX - drag.dx}px`;
+    drag.ghost.style.top = `${e.clientY - drag.dy}px`;
+
+    // Reordena ao vivo conforme o cursor passa por cima dos outros cards
+    const under = document.elementFromPoint(e.clientX, e.clientY);
+    const target = under && under.closest('.stat-card');
+    if (!target || target === drag.card || target.offsetParent === null || !grid.contains(target)) return;
+    const rect = target.getBoundingClientRect();
+    const oneColumn = getComputedStyle(grid).gridTemplateColumns.trim().split(/\s+/).length === 1;
+    const after = oneColumn ? e.clientY > rect.top + rect.height / 2 : e.clientX > rect.left + rect.width / 2;
+    const reference = after ? target.nextElementSibling : target;
+    if (drag.card.nextElementSibling === reference) return; // já está nessa posição
+    moveWithAnimation(grid, () => grid.insertBefore(drag.card, reference));
+  });
+
+  function endDrag(e) {
+    if (pending && e.pointerId === pending.id) {
+      clearTimeout(pending.timer);
+      pending = null;
+    }
+    if (!drag) return;
+    const { card, ghost } = drag;
+    drag = null;
+    document.removeEventListener('touchmove', blockTouchScroll);
+
+    const finish = () => {
+      ghost.remove();
+      card.classList.remove('drag-slot');
+      document.body.classList.remove('is-dragging-card');
+      draggingCard = null;
+      saveCardOrder();
+    };
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return finish();
+
+    // Solta "encaixando" o card na posição final
+    const slot = card.getBoundingClientRect();
+    ghost.style.transition = 'left 160ms var(--ease-out-expo), top 160ms var(--ease-out-expo), transform 160ms var(--ease-out-expo), box-shadow 160ms var(--ease-out-expo)';
+    ghost.style.left = `${slot.left}px`;
+    ghost.style.top = `${slot.top}px`;
+    ghost.classList.add('dropping');
+    setTimeout(finish, 180);
+  }
+  window.addEventListener('pointerup', endDrag);
+  window.addEventListener('pointercancel', endDrag);
+
+  grid.addEventListener('keydown', e => {
+    const card = e.target.closest('.stat-card');
+    if (!card || !e.altKey || !['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) return;
+    e.preventDefault();
+    const visible = [...grid.querySelectorAll('.stat-card')].filter(c => c.offsetParent !== null);
+    const forward = e.key === 'ArrowRight' || e.key === 'ArrowDown';
+    const neighbor = visible[visible.indexOf(card) + (forward ? 1 : -1)];
+    if (!neighbor) return;
+    moveWithAnimation(grid, () => grid.insertBefore(card, forward ? neighbor.nextElementSibling : neighbor));
+    card.focus();
+    saveCardOrder();
+  });
+}
+
 // 1. CARREGAR DASHBOARD
 let dashboardData = null;
+let riskData = null;
 let chartAnimate = true;
 
 function onDashboardFilterChange() {
@@ -136,6 +345,7 @@ async function loadDashboard() {
 }
 
 function renderDashboard(data) {
+  restoreCardOrder();
   const c = data.cards;
   const periodDays = data.periodo_dias;
 
@@ -153,12 +363,24 @@ function renderDashboard(data) {
     document.getElementById('kpiMargemDelta').innerHTML = deltaHtml(c.margem_media.delta_pp, { unit: ' p.p.', periodDays });
   }
 
+  // Itens sem saída: quantidade + capital parado (a custo, só admin). A variação fica no tooltip.
   document.getElementById('kpiSemSaida').textContent = c.itens_sem_saida.valor.toLocaleString('pt-BR');
-  document.getElementById('kpiSemSaidaDelta').innerHTML = deltaHtml(c.itens_sem_saida.delta, { higherIsBetter: false, periodDays });
-  document.getElementById('kpiEstoqueBaixo').textContent = c.estoque_baixo.valor.toLocaleString('pt-BR');
-  document.getElementById('kpiEstoqueBaixoDelta').innerHTML = deltaHtml(c.estoque_baixo.delta, { higherIsBetter: false, periodDays });
+  const idleSub = document.getElementById('kpiSemSaidaSub');
+  idleSub.innerHTML = c.itens_sem_saida.valor_parado !== undefined
+    ? `<strong>${formatBRL(c.itens_sem_saida.valor_parado, 0)}</strong> parados`
+    : `há ${periodDays}+ dias sem saída`;
+  idleSub.title = deltaPlain(c.itens_sem_saida.delta, periodDays);
+
+  // Risco de ruptura: quantidade + prazo do item mais urgente. A variação fica no tooltip e no modal.
+  const risk = c.risco_ruptura;
+  riskData = risk;
+  document.getElementById('kpiRisco').textContent = risk.valor.toLocaleString('pt-BR');
+  const riskSub = document.getElementById('kpiRiscoSub');
+  riskSub.innerHTML = riskSubText(risk);
+  riskSub.title = deltaPlain(risk.delta, periodDays);
   document.getElementById('alertsDot').style.display = c.estoque_baixo.valor > 0 ? '' : 'none';
 
+  syncMetricOptions(data.serie.length > 0 && data.serie[0].faturamento !== undefined);
   renderSalesChart();
   chartAnimate = false;
 
@@ -184,15 +406,122 @@ function renderDashboard(data) {
   renderRecentFeed(data.ultimas);
 }
 
+// Métricas do gráfico principal: mesmo espaço e mesmo seletor de período para qualquer visão
+const CHART_BLUE = '#2563EB';
+const CHART_GREEN = '#10B981';
+const CHART_METRICS = {
+  vendidos: {
+    title: 'Itens mais vendidos ao longo do tempo',
+    options: () => ({
+      series: [{ key: 'valor', label: 'Unidades vendidas', color: CHART_BLUE }],
+      formatValue: v => `${v.toLocaleString('pt-BR')} un.`,
+      ariaLabel: 'Gráfico de unidades vendidas por mês',
+      emptyText: 'Nenhuma venda registrada no período',
+      onSelect: i => openMonthSales(dashboardData.serie[i])
+    })
+  },
+  faturamento: {
+    title: 'Faturamento ao longo do tempo',
+    options: () => ({
+      series: [{ key: 'faturamento', label: 'Faturamento', color: CHART_BLUE }],
+      formatValue: v => formatBRL(v),
+      formatAxis: v => (v === 0 ? '0' : v >= 1000 ? `R$ ${(v / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} mil` : `R$ ${v}`),
+      ariaLabel: 'Gráfico de faturamento por mês',
+      emptyText: 'Nenhum faturamento no período',
+      onSelect: i => openMonthSales(dashboardData.serie[i])
+    })
+  },
+  fluxo: {
+    title: 'Entradas x Saídas ao longo do tempo',
+    options: () => ({
+      series: [
+        { key: 'entradas', label: 'Entradas', color: CHART_GREEN },
+        { key: 'valor', label: 'Saídas', color: CHART_BLUE }
+      ],
+      formatValue: v => `${v.toLocaleString('pt-BR')} un.`,
+      ariaLabel: 'Gráfico de entradas e saídas por mês',
+      emptyText: 'Nenhuma movimentação no período'
+    })
+  }
+};
+
+// Só admin recebe faturamento: sem o campo na resposta, a opção some do seletor
+function syncMetricOptions(hasRevenue) {
+  const select = document.getElementById('metricSelect');
+  const option = select.querySelector('option[value="faturamento"]');
+  if (!hasRevenue && option) {
+    if (select.value === 'faturamento') select.value = 'vendidos';
+    option.remove();
+  } else if (hasRevenue && !option) {
+    select.insertBefore(new Option('Faturamento (R$)', 'faturamento'), select.querySelector('option[value="fluxo"]'));
+  }
+}
+
+function onMetricChange() {
+  chartAnimate = true;
+  renderSalesChart();
+  chartAnimate = false;
+}
+
 function renderSalesChart() {
   if (!dashboardData) return;
-  const container = document.getElementById('salesChart');
-  renderAreaChart(container, dashboardData.serie, {
-    unit: 'un.',
-    animate: chartAnimate,
-    emptyText: 'Nenhuma venda registrada no período',
-    onSelect: i => openMonthSales(dashboardData.serie[i])
-  });
+  const metric = CHART_METRICS[document.getElementById('metricSelect').value] || CHART_METRICS.vendidos;
+  document.getElementById('chartTitle').textContent = metric.title;
+  renderAreaChart(document.getElementById('salesChart'), dashboardData.serie, { animate: chartAnimate, ...metric.options() });
+}
+
+// "Ver detalhes" do card Risco de ruptura: consumo, prazo, giro e reposição sugerida de cada item em risco
+function openRiskDetails() {
+  const body = document.getElementById('riskBody');
+  const note = document.getElementById('riskNote');
+  const risk = riskData;
+  openModal('riskModal');
+  if (!risk) {
+    body.innerHTML = emptyStateHtml('Sem dados', 'Aguarde o painel carregar.');
+    return;
+  }
+
+  const periodDays = dashboardData ? dashboardData.periodo_dias : 30;
+  note.textContent = `Consumo médio dos últimos ${risk.consumo_dias} dias. Em risco: esgota em até ${risk.limiar_dias} dias ou já zerou e vendia. Reposição sugerida: cobre ${risk.consumo_dias} dias de consumo, respeitando mínimo e máximo.`;
+
+  if (risk.itens.length === 0) {
+    body.innerHTML = emptyStateHtml('Nenhum item em risco', `Nenhum produto com saída recente esgota em até ${risk.limiar_dias} dias.`);
+    return;
+  }
+
+  const rows = risk.itens.map((item, i) => {
+    const unit = escapeHtml(unitLabel(item.unidade));
+    const prazo = item.zerado ? '<span class="badge badge-danger">Zerado</span>' : `~${formatDays(item.dias)}`;
+    return `
+      <tr>
+        <td class="num-col">${i + 1}</td>
+        <td><div class="row-title">${escapeHtml(item.produto)}</div><div class="row-sub">${escapeHtml(item.codigo)}</div></td>
+        <td class="num">${item.saldo.toLocaleString('pt-BR')} ${unit}</td>
+        <td class="num">${item.consumo_diario.toLocaleString('pt-BR')} ${unit}/dia</td>
+        <td class="num">${prazo}</td>
+        <td class="num">${item.giro === null ? '-' : item.giro.toLocaleString('pt-BR') + '×'}</td>
+        <td class="num"><strong>${item.sugestao > 0 ? '+ ' + item.sugestao.toLocaleString('pt-BR') + ' ' + unit : '-'}</strong></td>
+      </tr>`;
+  }).join('');
+
+  body.innerHTML = `
+    <p class="modal-summary"><strong>${risk.valor}</strong> ${risk.valor === 1 ? 'item em risco' : 'itens em risco'} · ${escapeHtml(deltaPlain(risk.delta, periodDays))}</p>
+    <div class="table-responsive month-sales">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th class="num-col">Nº</th>
+            <th>Produto</th>
+            <th class="num">Saldo</th>
+            <th class="num">Consumo</th>
+            <th class="num">Esgota em</th>
+            <th class="num">Giro 30d</th>
+            <th class="num">Reposição sugerida</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
 }
 
 // Clique num ponto do gráfico: lista numerada de itens vendidos no mês, com total no final
