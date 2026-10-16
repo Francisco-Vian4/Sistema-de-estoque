@@ -7,7 +7,8 @@ let dbType = 'sqlite';
 let pgPool = null;
 let sqlJsDb = null;
 let SQL = null;
-const dbFilePath = path.join(__dirname, '../../data/estoque.db');
+// SQLITE_PATH permite apontar para outro arquivo (ex.: rodar testes sem tocar no banco de desenvolvimento)
+const dbFilePath = process.env.SQLITE_PATH || path.join(__dirname, '../../data/estoque.db');
 
 function saveSqliteDisk() {
   if (sqlJsDb) {

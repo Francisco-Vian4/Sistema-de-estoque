@@ -18,6 +18,15 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // Navegação entre abas
+const TAB_META = {
+  dashboard: { title: 'Painel Geral', subtitle: 'Visão principal do estoque' },
+  products: { title: 'Produtos', subtitle: 'Catálogo de peças com as 20 colunas de controle' },
+  movements: { title: 'Movimentações', subtitle: 'Entradas, saídas e ajustes com auditoria e usuário responsável' },
+  reports: { title: 'Relatórios', subtitle: 'Gere relatórios em PDF, Excel e Word com filtros por categoria e situação' },
+  users: { title: 'Usuários', subtitle: 'Acessos de administradores e operadores de estoque' },
+  database: { title: 'Banco de Dados', subtitle: 'SQLite local ou PostgreSQL / Supabase na nuvem' }
+};
+
 function switchTab(tabId) {
   document.querySelectorAll('.tab-pane').forEach(el => el.classList.remove('active'));
   document.querySelectorAll('.sidebar-menu .nav-item').forEach(el => el.classList.remove('active'));
@@ -25,116 +34,271 @@ function switchTab(tabId) {
   const targetPane = document.getElementById(`tab-${tabId}`);
   if (targetPane) targetPane.classList.add('active');
 
-  const titles = {
-    dashboard: 'Painel Geral & Indicadores',
-    products: 'Catálogo de Produtos & Estoque',
-    movements: 'Histórico de Movimentações',
-    reports: 'Central de Relatórios & Exportações',
-    users: 'Gestão de Usuários & Perfis',
-    database: 'Banco de Dados & Conexão Supabase'
-  };
-
-  document.getElementById('topbarTitle').textContent = titles[tabId] || 'Estoque Pro';
+  const meta = TAB_META[tabId] || { title: 'Estoque Pro', subtitle: '' };
+  document.getElementById('pageTitle').textContent = meta.title;
+  document.getElementById('pageSubtitle').textContent = meta.subtitle;
+  // O seletor de período só faz sentido no painel
+  document.getElementById('pageActions').style.display = tabId === 'dashboard' ? '' : 'none';
 
   // Highlight active menu button
   const buttons = document.querySelectorAll('.sidebar-menu .nav-item');
   buttons.forEach(btn => {
-    if (btn.getAttribute('onclick') && btn.getAttribute('onclick').includes(tabId)) {
+    if (btn.getAttribute('onclick') && btn.getAttribute('onclick').includes(`'${tabId}'`)) {
       btn.classList.add('active');
     }
   });
 
+  if (tabId === 'dashboard') renderSalesChart();
   if (tabId === 'movements') loadMovements();
   if (tabId === 'users') loadUsers();
 }
 
+// Sino do topo: leva direto para os itens com estoque baixo
+function openLowStock() {
+  switchTab('products');
+  document.getElementById('prodSearchInput').value = '';
+  document.getElementById('filterStatus').value = 'ESTOQUE BAIXO';
+  loadProducts();
+}
+
+// ---------- Helpers de formatação (usados no painel) ----------
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+}
+
+function formatBRL(value) {
+  return `R$ ${Number(value || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function unitLabel(unit) {
+  const u = String(unit || 'UN').toLowerCase();
+  return u === 'un' ? 'un.' : u;
+}
+
+// "Hoje, 10:24" · "Ontem, 16:43" · "12/05/2024"
+function formatWhen(iso) {
+  const d = new Date(iso);
+  const time = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  const startOf = x => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diffDays = Math.round((startOf(new Date()) - startOf(d)) / 86400000);
+  if (diffDays === 0) return `Hoje, ${time}`;
+  if (diffDays === 1) return `Ontem, ${time}`;
+  return d.toLocaleDateString('pt-BR');
+}
+
+function thumbHtml(item) {
+  const img = item.imagem_url
+    ? `<img src="${escapeHtml(item.imagem_url)}" alt="" loading="lazy" onerror="this.remove()">`
+    : '';
+  return `<div class="thumb">${icon('package')}${img}</div>`;
+}
+
+function emptyStateHtml(title, text) {
+  return `<div class="empty-state">${icon('package')}<strong>${escapeHtml(title)}</strong>${escapeHtml(text)}</div>`;
+}
+
+// Variação em relação ao período anterior: seta + valor, verde se melhorou e vermelho se piorou
+function deltaHtml(value, { unit = '', higherIsBetter = true, periodDays = 30 } = {}) {
+  if (value === null || value === undefined) {
+    return '<span>Sem histórico para comparar</span>';
+  }
+  const label = `<span>vs. ${periodDays} dias atrás</span>`;
+  if (value === 0) {
+    return `<strong class="flat">${icon('minus')} 0${unit}</strong>${label}`;
+  }
+  const up = value > 0;
+  const good = up === higherIsBetter;
+  const text = `${up ? '+' : '-'}${Math.abs(value).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}${unit}`;
+  return `<strong class="${good ? 'good' : 'bad'}">${icon(up ? 'arrow-up-right' : 'arrow-down-right')} ${text}</strong>${label}`;
+}
+
 // 1. CARREGAR DASHBOARD
-async function loadDashboard(showLoading = true) {
+let dashboardData = null;
+let chartAnimate = true;
+
+function onDashboardFilterChange() {
+  chartAnimate = true;
+  loadDashboard();
+}
+
+async function loadDashboard() {
   try {
-    const res = await fetch('/api/products/stats', { headers: getAuthHeaders() });
+    const period = document.getElementById('periodSelect').value;
+    const months = document.getElementById('monthsSelect').value;
+    const res = await fetch(`/api/dashboard?period=${period}&months=${months}`, { headers: getAuthHeaders() });
     if (!res.ok) return;
-    const { stats } = await res.json();
-
-    document.getElementById('kpiTotalItens').textContent = stats.total_itens;
-    document.getElementById('kpiTotalQtd').textContent = stats.total_quantidade;
-    document.getElementById('kpiValorCusto').textContent = `R$ ${stats.valor_total_custo.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
-    document.getElementById('kpiValorVenda').textContent = `R$ ${stats.valor_total_venda.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
-    document.getElementById('kpiMargemSub').textContent = `Margem média estimada: ${stats.margem_media_percent}%`;
-    document.getElementById('kpiEstoqueBaixo').textContent = stats.status.baixo;
-    document.getElementById('kpiSemEstoque').textContent = stats.status.sem_estoque;
-
-    document.getElementById('sidebarProdCount').textContent = stats.total_itens;
-
-    // Renderiza barras de categorias
-    const catContainer = document.getElementById('categoryBarsList');
-    catContainer.innerHTML = '';
-    const maxCat = stats.categorias.length > 0 ? stats.categorias[0].total_itens : 1;
-    document.getElementById('catCountBadge').textContent = `${stats.categorias.length} categorias`;
-
-    stats.categorias.forEach(c => {
-      const pct = Math.round((c.total_itens / maxCat) * 100);
-      const itemEl = document.createElement('div');
-      itemEl.className = 'cat-bar-item';
-      itemEl.innerHTML = `
-        <div class="cat-bar-info">
-          <span>${c.categoria}</span>
-          <strong>${c.total_itens} itens</strong>
-        </div>
-        <div class="cat-bar-track">
-          <div class="cat-bar-fill" style="width: ${pct}%"></div>
-        </div>
-      `;
-      catContainer.appendChild(itemEl);
-    });
-
-    // Atualiza feed recente no painel
-    loadRecentFeed();
+    const { data } = await res.json();
+    dashboardData = data;
+    renderDashboard(data);
   } catch (err) {
     console.error('Erro ao carregar dashboard:', err);
   }
 }
 
-// 2. CARREGAR FEED DE MOVIMENTAÇÕES RECENTES
-async function loadRecentFeed() {
+function renderDashboard(data) {
+  const c = data.cards;
+  const periodDays = data.periodo_dias;
+
+  document.getElementById('sidebarProdCount').textContent = c.total_itens;
+  document.getElementById('kpiTotalItens').textContent = c.total_itens.toLocaleString('pt-BR');
+  document.getElementById('kpiTotalQtd').textContent = c.total_unidades.toLocaleString('pt-BR');
+
+  // Valores financeiros só chegam para administradores
+  if (c.valor_estoque) {
+    document.getElementById('kpiValorEstoque').textContent = formatBRL(c.valor_estoque.valor);
+    document.getElementById('kpiValorEstoqueDelta').innerHTML = deltaHtml(c.valor_estoque.delta_percent, { unit: '%', periodDays });
+  }
+  if (c.margem_media) {
+    document.getElementById('kpiMargem').textContent = `${c.margem_media.valor.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%`;
+    document.getElementById('kpiMargemDelta').innerHTML = deltaHtml(c.margem_media.delta_pp, { unit: ' p.p.', periodDays });
+  }
+
+  document.getElementById('kpiSemSaida').textContent = c.itens_sem_saida.valor.toLocaleString('pt-BR');
+  document.getElementById('kpiSemSaidaDelta').innerHTML = deltaHtml(c.itens_sem_saida.delta, { higherIsBetter: false, periodDays });
+  document.getElementById('kpiEstoqueBaixo').textContent = c.estoque_baixo.valor.toLocaleString('pt-BR');
+  document.getElementById('kpiEstoqueBaixoDelta').innerHTML = deltaHtml(c.estoque_baixo.delta, { higherIsBetter: false, periodDays });
+  document.getElementById('alertsDot').style.display = c.estoque_baixo.valor > 0 ? '' : 'none';
+
+  renderSalesChart();
+  chartAnimate = false;
+
+  document.getElementById('rankingList').innerHTML = data.ranking.length
+    ? data.ranking.map((r, i) => `
+        <div class="list-row">
+          <span class="rank-pos">${i + 1}</span>
+          ${thumbHtml(r)}
+          <div class="row-main"><div class="row-title">${escapeHtml(r.produto)}</div></div>
+          <span class="row-value">${r.quantidade.toLocaleString('pt-BR')} ${escapeHtml(unitLabel(r.unidade))}</span>
+        </div>`).join('')
+    : emptyStateHtml('Nenhuma saída no período', 'Os itens mais vendidos aparecem aqui.');
+
+  document.getElementById('idleList').innerHTML = data.sem_saida.length
+    ? data.sem_saida.map(r => `
+        <div class="list-row">
+          ${thumbHtml(r)}
+          <div class="row-main"><div class="row-title">${escapeHtml(r.produto)}</div></div>
+          <span class="days-badge">${r.dias} dias</span>
+        </div>`).join('')
+    : emptyStateHtml('Nenhum item parado', `Todos os itens em estoque tiveram saída nos últimos ${periodDays} dias.`);
+
+  renderRecentFeed(data.ultimas);
+}
+
+function renderSalesChart() {
+  if (!dashboardData) return;
+  const container = document.getElementById('salesChart');
+  renderAreaChart(container, dashboardData.serie, {
+    unit: 'un.',
+    animate: chartAnimate,
+    emptyText: 'Nenhuma venda registrada no período',
+    onSelect: i => openMonthSales(dashboardData.serie[i])
+  });
+}
+
+// Clique num ponto do gráfico: lista numerada de itens vendidos no mês, com total no final
+async function openMonthSales(point) {
+  const body = document.getElementById('monthSalesBody');
+  document.getElementById('monthSalesTitle').textContent = `Vendas de ${point.label} ${point.ano}`;
+  document.getElementById('monthSalesNote').textContent = '';
+  body.innerHTML = '<p class="loading-note">Carregando...</p>';
+  openModal('monthSalesModal');
+
   try {
-    const res = await fetch('/api/movements?limit=6', { headers: getAuthHeaders() });
-    if (!res.ok) return;
-    const { data } = await res.json();
-    const feedContainer = document.getElementById('recentMovementsFeed');
-    feedContainer.innerHTML = '';
+    const res = await fetch(`/api/dashboard/sales?month=${encodeURIComponent(point.chave)}`, { headers: getAuthHeaders() });
+    const json = await res.json();
+    if (!res.ok || !json.success) throw new Error(json.error || 'Falha ao carregar as vendas do mês.');
+    renderMonthSales(json.data);
+  } catch (err) {
+    body.innerHTML = emptyStateHtml('Não foi possível carregar', err.message);
+  }
+}
 
-    if (!data || data.length === 0) {
-      feedContainer.innerHTML = '<p class="text-muted" style="text-align:center; padding: 20px; font-size:12px; color: #94a3b8;">Nenhuma movimentação recente registrada.</p>';
-      return;
-    }
+function renderMonthSales(data) {
+  const body = document.getElementById('monthSalesBody');
+  const hasValue = data.total.valor !== undefined;
 
-    data.forEach(m => {
-      const item = document.createElement('div');
-      item.className = 'mov-feed-item';
-      const iconClass = m.tipo === 'ENTRADA' ? 'entrada' : m.tipo === 'SAIDA' ? 'saida' : 'ajuste';
-      const icon = m.tipo === 'ENTRADA' ? 'fa-arrow-down' : m.tipo === 'SAIDA' ? 'fa-arrow-up' : 'fa-sliders';
-      const formattedDate = new Date(m.data_hora).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  if (data.itens.length === 0) {
+    body.innerHTML = emptyStateHtml('Nenhuma venda neste mês', 'As saídas registradas aparecem aqui.');
+    return;
+  }
 
-      item.innerHTML = `
-        <div class="mov-item-left">
-          <div class="mov-badge-icon ${iconClass}">
-            <i class="fa-solid ${icon}"></i>
-          </div>
-          <div>
-            <strong style="font-size: 13px; color: #1e293b;">${m.produto_codigo} &bull; ${m.produto_nome}</strong>
-            <div style="font-size: 11px; color: #64748b;">${m.motivo || m.tipo} por <em>${m.usuario_nome || 'Sistema'}</em></div>
-          </div>
+  const rows = data.itens.map((item, i) => `
+    <tr>
+      <td class="num-col">${i + 1}</td>
+      <td><div class="row-title">${escapeHtml(item.produto)}</div><div class="row-sub">${escapeHtml(item.codigo)}</div></td>
+      <td class="num">${item.quantidade.toLocaleString('pt-BR')} ${escapeHtml(unitLabel(item.unidade))}</td>
+      ${hasValue ? `<td class="num">${formatBRL(item.valor)}</td>` : ''}
+    </tr>`).join('');
+
+  body.innerHTML = `
+    <div class="table-responsive month-sales">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th class="num-col">Nº</th>
+            <th>Produto</th>
+            <th class="num">Qtd. vendida</th>
+            ${hasValue ? '<th class="num">Valor vendido</th>' : ''}
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+        <tfoot>
+          <tr>
+            <td></td>
+            <td>Total (${data.itens.length} ${data.itens.length === 1 ? 'item' : 'itens'})</td>
+            <td class="num">${data.total.quantidade.toLocaleString('pt-BR')} un.</td>
+            ${hasValue ? `<td class="num">${formatBRL(data.total.valor)}</td>` : ''}
+          </tr>
+        </tfoot>
+      </table>
+    </div>`;
+
+  document.getElementById('monthSalesNote').textContent = hasValue
+    ? 'Valores calculados com o preço de venda atual de cada produto.'
+    : '';
+}
+
+// O SVG usa a largura real do contêiner: redesenha ao redimensionar a janela
+let chartResizeTimer = null;
+window.addEventListener('resize', () => {
+  clearTimeout(chartResizeTimer);
+  chartResizeTimer = setTimeout(renderSalesChart, 150);
+});
+
+// 2. ÚLTIMAS MOVIMENTAÇÕES (vem junto com o painel)
+function renderRecentFeed(movements) {
+  const feed = document.getElementById('recentMovementsFeed');
+
+  if (!movements || movements.length === 0) {
+    feed.innerHTML = emptyStateHtml('Nenhuma movimentação registrada', 'Entradas, saídas e ajustes aparecem aqui em tempo real.');
+    return;
+  }
+
+  const kinds = {
+    ENTRADA: { cls: 'in', ic: 'arrow-up', title: 'Entrada de produtos' },
+    SAIDA: { cls: 'out', ic: 'arrow-down', title: 'Saída de produtos' },
+    AJUSTE: { cls: 'adj', ic: 'sliders-horizontal', title: 'Ajuste de estoque' }
+  };
+
+  feed.innerHTML = movements.map(m => {
+    const k = kinds[m.tipo] || kinds.AJUSTE;
+    const detail = m.tipo === 'ENTRADA' && m.fornecedor ? `Fornecedor: ${m.fornecedor}` : m.motivo;
+    const sub = [m.produto, detail].filter(Boolean).join(' • ');
+    const unit = unitLabel(m.unidade);
+    const qty = m.tipo === 'ENTRADA' ? `+ ${m.quantidade} ${unit}`
+      : m.tipo === 'SAIDA' ? `- ${m.quantidade} ${unit}`
+      : `= ${m.saldo} ${unit}`;
+    return `
+      <div class="list-row">
+        <div class="feed-ic ${k.cls}">${icon(k.ic)}</div>
+        <div class="row-main">
+          <div class="row-title">${k.title}</div>
+          <div class="row-sub">${escapeHtml(sub)}</div>
         </div>
-        <div style="text-align: right;">
-          <strong style="font-size: 13px; color: ${m.tipo === 'ENTRADA' ? '#059669' : m.tipo === 'SAIDA' ? '#dc2626' : '#2563eb'};">
-            ${m.tipo === 'ENTRADA' ? '+' : m.tipo === 'SAIDA' ? '-' : ''}${m.quantidade} ${m.unidade || 'UN'}
-          </strong>
-          <div style="font-size: 10px; color: #94a3b8;">${formattedDate}</div>
-        </div>
-      `;
-      feedContainer.appendChild(item);
-    });
-  } catch (e) {}
+        <span class="row-time">${formatWhen(m.data_hora)}</span>
+        <span class="row-qty ${k.cls}">${escapeHtml(qty)}</span>
+      </div>`;
+  }).join('');
 }
 
 // 3. CARREGAR PRODUTOS (COM AS 20 COLUNAS)

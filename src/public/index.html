@@ -7,7 +7,7 @@
   <!-- Google Fonts & Font Awesome -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <!-- Stylesheets -->
   <link rel="stylesheet" href="/css/styles.css">
@@ -18,15 +18,10 @@
 
   <!-- TELA DE LOGIN (EXIBIDA SE NÃO AUTENTICADO) -->
   <div id="loginScreen" class="login-wrapper">
-    <div class="login-bg-shapes">
-      <div class="shape shape-1"></div>
-      <div class="shape shape-2"></div>
-      <div class="shape shape-3"></div>
-    </div>
     <div class="login-card">
       <div class="login-header">
         <div class="logo-circle">
-          <i class="fa-solid fa-boxes-stacked"></i>
+          <i class="fa-solid fa-box"></i>
         </div>
         <h1>Controle de Estoque Pro</h1>
         <p>Sistema Especializado para Assistência Técnica & Varejo</p>
@@ -86,7 +81,7 @@
     <aside class="sidebar">
       <div class="sidebar-brand">
         <div class="brand-icon">
-          <i class="fa-solid fa-boxes-stacked"></i>
+          <i data-ic="box"></i>
         </div>
         <div class="brand-text">
           <h2>Estoque Pro</h2>
@@ -96,29 +91,29 @@
 
       <nav class="sidebar-menu">
         <button class="nav-item active" onclick="switchTab('dashboard')">
-          <i class="fa-solid fa-chart-pie"></i>
-          <span>Painel Geral</span>
+          <i data-ic="layout-dashboard"></i>
+          <span>Dashboard</span>
         </button>
         <button class="nav-item" onclick="switchTab('products')">
-          <i class="fa-solid fa-box-open"></i>
-          <span>Produtos & Peças</span>
-          <span class="badge badge-primary" id="sidebarProdCount">0</span>
+          <i data-ic="box"></i>
+          <span>Produtos</span>
+          <span class="badge badge-light" id="sidebarProdCount">0</span>
         </button>
         <button class="nav-item" onclick="switchTab('movements')">
-          <i class="fa-solid fa-arrow-right-arrow-left"></i>
+          <i data-ic="arrow-left-right"></i>
           <span>Movimentações</span>
         </button>
         <button class="nav-item" onclick="switchTab('reports')">
-          <i class="fa-solid fa-file-invoice"></i>
-          <span>Central de Relatórios</span>
+          <i data-ic="bar-chart-3"></i>
+          <span>Relatórios</span>
         </button>
         <button class="nav-item admin-only" onclick="switchTab('users')">
-          <i class="fa-solid fa-users-gear"></i>
+          <i data-ic="users"></i>
           <span>Usuários</span>
         </button>
         <button class="nav-item" onclick="switchTab('database')">
-          <i class="fa-solid fa-database"></i>
-          <span>Banco / Supabase</span>
+          <i data-ic="database"></i>
+          <span>Banco de Dados</span>
         </button>
       </nav>
 
@@ -127,7 +122,7 @@
         <div class="ext-info">
           <h4>Extensão Chrome / Edge</h4>
           <p>Acesse o estoque em qualquer aba</p>
-          <button class="btn btn-xs btn-outline-light" onclick="openExtensionModal()">Ver Como Instalar</button>
+          <button class="btn btn-xs btn-outline-light" onclick="openExtensionModal()">Ver como instalar</button>
         </div>
       </div>
 
@@ -137,8 +132,8 @@
           <strong id="sidebarUserName">Administrador</strong>
           <span class="user-role-badge" id="sidebarUserRole">Admin</span>
         </div>
-        <button class="btn-logout" title="Sair" onclick="handleLogout()">
-          <i class="fa-solid fa-right-from-bracket"></i>
+        <button class="btn-logout" title="Sair" aria-label="Sair" onclick="handleLogout()">
+          <i data-ic="log-out"></i>
         </button>
       </div>
     </aside>
@@ -147,124 +142,162 @@
     <main class="main-content">
       <!-- CABEÇALHO SUPERIOR -->
       <header class="topbar">
-        <div class="topbar-left">
-          <h1 id="topbarTitle">Painel Geral</h1>
+        <div class="search-mini">
+          <i data-ic="search"></i>
+          <input type="text" id="globalSearch" placeholder="Buscar produtos, códigos, categorias..." aria-label="Buscar produtos" onkeyup="debounceGlobalSearch(event)">
+        </div>
+        <div class="topbar-right">
           <div class="live-status-chip">
             <span class="pulse-dot"></span>
             <span id="socketStatusText">Tempo Real Ativo</span>
           </div>
-        </div>
-        <div class="topbar-right">
-          <div class="search-mini">
-            <i class="fa-solid fa-magnifying-glass"></i>
-            <input type="text" id="globalSearch" placeholder="Buscar código, produto, marca..." onkeyup="debounceGlobalSearch(event)">
-          </div>
-          <button class="btn btn-primary" onclick="openNewProductModal()">
-            <i class="fa-solid fa-plus"></i> Novo Produto
+          <button class="icon-btn" id="alertsBtn" title="Itens com estoque baixo" aria-label="Itens com estoque baixo" onclick="openLowStock()">
+            <i data-ic="bell"></i>
+            <span class="dot" id="alertsDot" style="display:none;"></span>
           </button>
-          <button class="btn btn-outline admin-only" onclick="openNewMovementModal()">
-            <i class="fa-solid fa-dolly"></i> Movimentar
+          <button class="btn btn-outline" onclick="openNewProductModal()">
+            <i data-ic="plus"></i> Novo produto
+          </button>
+          <button class="btn btn-primary admin-only" onclick="openNewMovementModal()">
+            <i data-ic="plus"></i> Nova movimentação
           </button>
         </div>
       </header>
+
+      <!-- TÍTULO DA PÁGINA -->
+      <div class="page-header">
+        <div>
+          <h1 class="page-title" id="pageTitle">Painel Geral</h1>
+          <p class="page-subtitle" id="pageSubtitle">Visão principal do estoque</p>
+        </div>
+        <div class="page-actions" id="pageActions">
+          <label class="select-pill">
+            <i data-ic="calendar"></i>
+            <select id="periodSelect" aria-label="Período de análise" onchange="onDashboardFilterChange()">
+              <option value="7">Últimos 7 dias</option>
+              <option value="30" selected>Últimos 30 dias</option>
+              <option value="90">Últimos 90 dias</option>
+            </select>
+            <i data-ic="chevron-down" class="chev"></i>
+          </label>
+        </div>
+      </div>
 
       <!-- CONTEÚDO DAS ABAS -->
       <div class="tab-content-area">
         <!-- 1. ABA DASHBOARD -->
         <section id="tab-dashboard" class="tab-pane active">
-          <!-- KPI CARDS -->
-          <div class="kpi-grid">
-            <div class="kpi-card">
-              <div class="kpi-icon blue">
-                <i class="fa-solid fa-boxes-packing"></i>
+          <!-- CARDS DE INDICADORES (máx. 4 por linha) -->
+          <div class="stat-grid">
+            <div class="stat-card admin-only">
+              <div class="stat-top">
+                <div class="stat-icon tone-blue"><i data-ic="database"></i></div>
+                <div>
+                  <div class="stat-label">Valor total do estoque</div>
+                  <div class="stat-value" id="kpiValorEstoque">R$ 0,00</div>
+                </div>
               </div>
-              <div class="kpi-details">
-                <span class="kpi-label">Itens Cadastrados</span>
-                <h3 class="kpi-value" id="kpiTotalItens">0</h3>
-                <span class="kpi-sub">Total de produtos únicos</span>
-              </div>
+              <div class="stat-delta" id="kpiValorEstoqueDelta"></div>
             </div>
 
-            <div class="kpi-card">
-              <div class="kpi-icon cyan">
-                <i class="fa-solid fa-cubes"></i>
+            <div class="stat-card admin-only">
+              <div class="stat-top">
+                <div class="stat-icon tone-green"><i data-ic="trending-up"></i></div>
+                <div>
+                  <div class="stat-label">Margem de lucro média</div>
+                  <div class="stat-value" id="kpiMargem">0%</div>
+                </div>
               </div>
-              <div class="kpi-details">
-                <span class="kpi-label">Unidades Físicas</span>
-                <h3 class="kpi-value" id="kpiTotalQtd">0</h3>
-                <span class="kpi-sub">Total de peças em prateleira</span>
-              </div>
+              <div class="stat-delta" id="kpiMargemDelta"></div>
             </div>
 
-            <div class="kpi-card admin-only">
-              <div class="kpi-icon indigo">
-                <i class="fa-solid fa-receipt"></i>
+            <div class="stat-card user-only">
+              <div class="stat-top">
+                <div class="stat-icon tone-blue"><i data-ic="package"></i></div>
+                <div>
+                  <div class="stat-label">Itens cadastrados</div>
+                  <div class="stat-value" id="kpiTotalItens">0</div>
+                </div>
               </div>
-              <div class="kpi-details">
-                <span class="kpi-label">Valor Total (Custo)</span>
-                <h3 class="kpi-value" id="kpiValorCusto">R$ 0,00</h3>
-                <span class="kpi-sub">Investimento imobilizado</span>
-              </div>
+              <div class="stat-delta">Total de produtos únicos</div>
             </div>
 
-            <div class="kpi-card admin-only">
-              <div class="kpi-icon emerald">
-                <i class="fa-solid fa-cash-register"></i>
+            <div class="stat-card user-only">
+              <div class="stat-top">
+                <div class="stat-icon tone-green"><i data-ic="box"></i></div>
+                <div>
+                  <div class="stat-label">Unidades em estoque</div>
+                  <div class="stat-value" id="kpiTotalQtd">0</div>
+                </div>
               </div>
-              <div class="kpi-details">
-                <span class="kpi-label">Valor Total (Venda)</span>
-                <h3 class="kpi-value" id="kpiValorVenda">R$ 0,00</h3>
-                <span class="kpi-sub" id="kpiMargemSub">Margem média: 0%</span>
-              </div>
+              <div class="stat-delta">Total de peças em prateleira</div>
             </div>
 
-            <div class="kpi-card">
-              <div class="kpi-icon amber">
-                <i class="fa-solid fa-triangle-exclamation"></i>
+            <div class="stat-card">
+              <div class="stat-top">
+                <div class="stat-icon tone-amber"><i data-ic="package"></i></div>
+                <div>
+                  <div class="stat-label">Itens sem saída</div>
+                  <div class="stat-value" id="kpiSemSaida">0</div>
+                </div>
               </div>
-              <div class="kpi-details">
-                <span class="kpi-label">Estoque Baixo</span>
-                <h3 class="kpi-value" id="kpiEstoqueBaixo">0</h3>
-                <span class="kpi-sub">Abaixo do estoque mínimo</span>
-              </div>
+              <div class="stat-delta" id="kpiSemSaidaDelta"></div>
             </div>
 
-            <div class="kpi-card">
-              <div class="kpi-icon rose">
-                <i class="fa-solid fa-circle-xmark"></i>
+            <div class="stat-card">
+              <div class="stat-top">
+                <div class="stat-icon tone-red"><i data-ic="alert-triangle"></i></div>
+                <div>
+                  <div class="stat-label">Estoque baixo</div>
+                  <div class="stat-value" id="kpiEstoqueBaixo">0</div>
+                </div>
               </div>
-              <div class="kpi-details">
-                <span class="kpi-label">Sem Estoque</span>
-                <h3 class="kpi-value" id="kpiSemEstoque">0</h3>
-                <span class="kpi-sub">Necessitam compra urgente</span>
-              </div>
+              <div class="stat-delta" id="kpiEstoqueBaixoDelta"></div>
             </div>
           </div>
 
-          <!-- GRÁFICOS E PAINÉIS RÁPIDOS -->
-          <div class="dashboard-row">
-            <div class="card card-categories">
-              <div class="card-header">
-                <h3><i class="fa-solid fa-layer-group"></i> Itens por Categoria</h3>
-                <span class="badge badge-light" id="catCountBadge">13 categorias</span>
+          <!-- GRÁFICO + RANKING -->
+          <div class="dash-grid">
+            <div class="panel col-8">
+              <div class="panel-head">
+                <h3 class="panel-title">Itens mais vendidos ao longo do tempo</h3>
+                <label class="select-pill compact">
+                  <select id="monthsSelect" aria-label="Janela do gráfico" onchange="onDashboardFilterChange()">
+                    <option value="3">Últimos 3 meses</option>
+                    <option value="6" selected>Últimos 6 meses</option>
+                    <option value="12">Últimos 12 meses</option>
+                  </select>
+                  <i data-ic="chevron-down" class="chev"></i>
+                </label>
               </div>
-              <div class="card-body">
-                <div id="categoryBarsList" class="category-bars-container">
-                  <!-- Inserido dinamicamente -->
-                </div>
-              </div>
+              <div class="chart-wrap" id="salesChart"></div>
             </div>
 
-            <div class="card card-recent-movements">
-              <div class="card-header">
-                <h3><i class="fa-solid fa-timeline"></i> Movimentações em Tempo Real</h3>
-                <button class="btn btn-xs btn-outline" onclick="switchTab('movements')">Ver Todas</button>
+            <div class="panel col-4">
+              <div class="panel-head">
+                <h3 class="panel-title">Ranking de itens</h3>
+                <button class="pill-btn" onclick="switchTab('products')">Ver todos</button>
               </div>
-              <div class="card-body">
-                <div id="recentMovementsFeed" class="movement-feed">
-                  <!-- Inserido dinamicamente -->
-                </div>
+              <div class="list-rows" id="rankingList"></div>
+            </div>
+          </div>
+
+          <!-- ITENS SEM SAÍDA + ÚLTIMAS MOVIMENTAÇÕES -->
+          <div class="dash-grid">
+            <div class="panel col-5">
+              <div class="panel-head">
+                <h3 class="panel-title">Itens sem saída</h3>
+                <button class="pill-btn" onclick="switchTab('products')">Ver todos</button>
               </div>
+              <div class="list-rows" id="idleList"></div>
+            </div>
+
+            <div class="panel col-7">
+              <div class="panel-head">
+                <h3 class="panel-title">Últimas movimentações</h3>
+                <button class="pill-btn" onclick="switchTab('movements')">Ver todas</button>
+              </div>
+              <div class="list-rows" id="recentMovementsFeed"></div>
             </div>
           </div>
         </section>
@@ -353,16 +386,6 @@
 
         <!-- 3. ABA MOVIMENTAÇÕES -->
         <section id="tab-movements" class="tab-pane">
-          <div class="section-header">
-            <div>
-              <h2>Histórico de Movimentações de Estoque</h2>
-              <p>Registro de todas as entradas, saídas e ajustes com auditoria e usuário responsável</p>
-            </div>
-            <button class="btn btn-primary admin-only" onclick="openNewMovementModal()">
-              <i class="fa-solid fa-plus"></i> Nova Movimentação
-            </button>
-          </div>
-
           <div class="table-card">
             <div class="table-responsive">
               <table class="data-table">
@@ -389,12 +412,7 @@
 
         <!-- 4. ABA CENTRAL DE RELATÓRIOS -->
         <section id="tab-reports" class="tab-pane">
-          <div class="section-header">
-            <div>
-              <h2>Central de Emissão de Relatórios</h2>
-              <p>Gere e baixe relatórios consolidados em tempo real em formato PDF, Excel e Word</p>
-            </div>
-          </div>
+          
 
           <div class="reports-filter-card">
             <h3>Filtros do Relatório</h3>
@@ -428,7 +446,7 @@
                 <li><i class="fa-solid fa-check"></i> Indicadores executivos no topo</li>
                 <li><i class="fa-solid fa-check"></i> Pronto para envio por e-mail ou impressão</li>
               </ul>
-              <button class="btn btn-danger btn-block" onclick="generateFilteredReport('pdf')">
+              <button class="btn btn-primary btn-block" onclick="generateFilteredReport('pdf')">
                 <i class="fa-solid fa-download"></i> Baixar Relatório em PDF
               </button>
             </div>
@@ -443,7 +461,7 @@
                 <li><i class="fa-solid fa-check"></i> Aba 2: Resumo Executivo e Totais</li>
                 <li><i class="fa-solid fa-check"></i> Formatação idêntica à planilha original</li>
               </ul>
-              <button class="btn btn-success btn-block" onclick="generateFilteredReport('excel')">
+              <button class="btn btn-primary btn-block" onclick="generateFilteredReport('excel')">
                 <i class="fa-solid fa-download"></i> Baixar Planilha Excel
               </button>
             </div>
@@ -468,10 +486,6 @@
         <!-- 5. ABA USUÁRIOS (ADMIN) -->
         <section id="tab-users" class="tab-pane">
           <div class="section-header">
-            <div>
-              <h2>Gestão de Usuários e Permissões</h2>
-              <p>Cadastre e gerencie os acessos de Administradores e Operadores de Estoque</p>
-            </div>
             <button class="btn btn-primary" onclick="openNewUserModal()">
               <i class="fa-solid fa-user-plus"></i> Novo Usuário
             </button>
@@ -500,12 +514,7 @@
 
         <!-- 6. ABA BANCO / SUPABASE -->
         <section id="tab-database" class="tab-pane">
-          <div class="section-header">
-            <div>
-              <h2>Conexão de Banco de Dados & Supabase</h2>
-              <p>O sistema suporta tanto banco de dados local (SQLite) quanto nuvem (PostgreSQL / Supabase)</p>
-            </div>
-          </div>
+          
 
           <div class="db-config-grid">
             <div class="card db-card">
@@ -534,6 +543,21 @@
         </section>
       </div>
     </main>
+  </div>
+
+  <!-- MODAL: VENDAS DO MÊS (abre ao clicar num ponto do gráfico do painel) -->
+  <div id="monthSalesModal" class="modal-overlay">
+    <div class="modal-box modal-lg">
+      <div class="modal-header">
+        <h3 id="monthSalesTitle">Vendas do mês</h3>
+        <button class="modal-close" aria-label="Fechar" onclick="closeModal('monthSalesModal')">&times;</button>
+      </div>
+      <div class="modal-body" id="monthSalesBody"></div>
+      <div class="modal-footer">
+        <span class="modal-note" id="monthSalesNote"></span>
+        <button type="button" class="btn btn-outline" onclick="closeModal('monthSalesModal')">Fechar</button>
+      </div>
+    </div>
   </div>
 
   <!-- MODAL: CADASTRAR / EDITAR PRODUTO -->
@@ -845,6 +869,8 @@
 
   <!-- SCRIPTS -->
   <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/icons.js"></script>
+  <script src="/js/charts.js"></script>
   <script src="/js/auth.js"></script>
   <script src="/js/socket-client.js"></script>
   <script src="/js/app.js"></script>

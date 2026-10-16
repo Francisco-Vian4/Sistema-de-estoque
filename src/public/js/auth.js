@@ -47,6 +47,11 @@ function applyUserPermissions() {
       el.style.display = 'none';
     }
   });
+
+  // Cards equivalentes para o operador (sem valores financeiros)
+  document.querySelectorAll('.user-only').forEach(el => {
+    el.style.display = isAdmin ? 'none' : '';
+  });
 }
 
 function setLoginRole(role) {

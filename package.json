@@ -7,6 +7,7 @@
     "start": "node src/server.js",
     "dev": "node src/server.js",
     "seed": "node src/seed.js",
+    "seed:demo": "node src/seed-demo.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
