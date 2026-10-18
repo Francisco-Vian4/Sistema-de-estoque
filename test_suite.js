@@ -1,6 +1,9 @@
 const http = require('http');
 const io = require('socket.io-client');
 
+// Porta do servidor sob teste (padrão 3000). Ex.: TEST_PORT=3100 node test_suite.js
+const TEST_PORT = Number(process.env.TEST_PORT) || 3000;
+
 async function request(path, options = {}) {
   return new Promise((resolve, reject) => {
     const defaultHeaders = {
@@ -12,7 +15,7 @@ async function request(path, options = {}) {
 
     const reqOptions = {
       hostname: 'localhost',
-      port: 3000,
+      port: TEST_PORT,
       path,
       method: options.method || 'GET',
       headers: { ...defaultHeaders, ...(options.headers || {}) }
@@ -108,10 +111,76 @@ async function runTests() {
   assert(stats.valor_total_custo > 30000, `Valor de custo consolidado: R$ ${stats.valor_total_custo}`);
   assert(stats.categorias.length >= 10, `Categorias identificadas: ${stats.categorias.length}`);
 
+  // 4.1 Painel Geral (/api/dashboard)
+  console.log('\n--- 4.1 Painel Geral: cards, gráfico e rankings ---');
+  const dashAdmin = await request('/api/dashboard?period=30&months=6', { token: adminToken });
+  assert(dashAdmin.statusCode === 200 && dashAdmin.body.success, 'Painel carregado para o Admin');
+  const dash = dashAdmin.body.data;
+  assert(dash.cards.total_itens >= 35, `Painel conta os itens cadastrados: ${dash.cards.total_itens}`);
+  assert(dash.cards.valor_estoque && dash.cards.valor_estoque.valor > 30000, 'Admin recebe o valor total do estoque');
+  assert(dash.cards.margem_media && typeof dash.cards.margem_media.valor === 'number', 'Admin recebe a margem média');
+  assert(typeof dash.cards.itens_sem_saida.valor === 'number' && typeof dash.cards.estoque_baixo.valor === 'number', 'Cards de itens sem saída e estoque baixo presentes');
+  const risco = dash.cards.risco_ruptura;
+  assert(risco && typeof risco.valor === 'number' && risco.limiar_dias === 15 && risco.consumo_dias === 30, 'Card Risco de ruptura traz valor, limiar (15 dias) e janela de consumo (30 dias)');
+  assert(Array.isArray(risco.itens) && risco.itens.length === Math.min(risco.valor, 50), 'Lista de itens em risco coerente com a contagem do card');
+  assert(risco.itens.every(i => i.zerado || i.dias <= risco.limiar_dias), 'Todo item em risco está zerado ou esgota em até 15 dias');
+  assert(risco.itens.every((i, k, a) => k === 0 || a[k - 1].dias <= i.dias), 'Itens em risco ordenados do mais urgente para o menos urgente');
+  assert(risco.itens.every(i => i.sugestao >= 0 && i.consumo_diario > 0), 'Cada item em risco tem consumo diário e reposição sugerida válidos');
+  assert(risco.valor === 0 ? risco.menor_prazo_dias === null && risco.zerados === 0 : (risco.menor_prazo_dias === null) === (risco.zerados === risco.valor),
+    'Menor prazo só é nulo quando todos os itens em risco já estão zerados');
+  assert(typeof dash.cards.itens_sem_saida.valor_parado === 'number' && dash.cards.itens_sem_saida.valor_parado >= 0, 'Admin recebe o valor parado dos itens sem saída');
+  assert(Array.isArray(dash.serie) && dash.serie.length === 6, `Série do gráfico com 6 meses (recebidos: ${dash.serie.length})`);
+  assert(Array.isArray(dash.ranking) && dash.ranking.length <= 5, 'Ranking limitado a 5 itens');
+  assert(Array.isArray(dash.sem_saida) && dash.sem_saida.length <= 5, 'Lista de itens sem saída limitada a 5');
+  assert(Array.isArray(dash.ultimas) && dash.ultimas.length <= 5, 'Últimas movimentações limitadas a 5');
+
+  const dashUser = await request('/api/dashboard', { token: userToken });
+  assert(dashUser.statusCode === 200 && !('valor_estoque' in dashUser.body.data.cards) && !('margem_media' in dashUser.body.data.cards),
+    'Operador NÃO recebe valores financeiros do painel');
+  assert(dashUser.body.data.cards.itens_sem_saida.valor_parado === undefined && dashUser.body.data.cards.risco_ruptura.valor >= 0,
+    'Operador NÃO recebe o valor parado, mas vê o Risco de ruptura');
+
+  const dashBadParams = await request('/api/dashboard?period=abc&months=999', { token: adminToken });
+  assert(dashBadParams.statusCode === 200 && dashBadParams.body.data.periodo_dias === 30 && dashBadParams.body.data.meses === 6,
+    'Parâmetros inválidos caem nos valores padrão (30 dias / 6 meses)');
+
+  const dashNoToken = await request('/api/dashboard');
+  assert(dashNoToken.statusCode === 401, 'Painel exige autenticação');
+
+  // 4.2 Vendas de um mês (clique no gráfico)
+  console.log('\n--- 4.2 Detalhe das vendas do mês ---');
+  assert(/^\d{4}-\d{2}$/.test(dash.serie[0].chave), `Cada ponto da série traz a chave do mês (${dash.serie[0].chave})`);
+  const monthKey = dash.serie[dash.serie.length - 1].chave;
+  const salesAdmin = await request(`/api/dashboard/sales?month=${monthKey}`, { token: adminToken });
+  assert(salesAdmin.statusCode === 200 && salesAdmin.body.success && Array.isArray(salesAdmin.body.data.itens), 'Admin recebe a lista de itens vendidos no mês');
+  const salesData = salesAdmin.body.data;
+  assert(salesData.total.valor !== undefined, 'Admin recebe o valor total vendido');
+  assert(salesData.itens.every(i => i.valor !== undefined), 'Admin recebe o valor vendido por item');
+  assert(salesData.total.quantidade === salesData.itens.reduce((s, i) => s + i.quantidade, 0), 'Total de unidades confere com a soma dos itens');
+  const sumValues = Number(salesData.itens.reduce((s, i) => s + i.valor, 0).toFixed(2));
+  assert(salesData.total.valor === sumValues, 'Valor total confere com a soma dos itens');
+  assert(salesData.itens.every((item, i, arr) => i === 0 || arr[i - 1].quantidade >= item.quantidade), 'Itens ordenados por quantidade vendida (maior primeiro)');
+
+  const lastPoint = dash.serie[dash.serie.length - 1];
+  assert(typeof lastPoint.entradas === 'number' && lastPoint.entradas >= 0, 'Série mensal traz as entradas (reposição)');
+  assert(typeof lastPoint.faturamento === 'number' && lastPoint.faturamento >= 0, 'Admin recebe o faturamento mensal na série');
+  assert(lastPoint.valor === salesData.total.quantidade && Math.abs(lastPoint.faturamento - salesData.total.valor) < 0.01,
+    'Ponto do gráfico (unidades e faturamento) bate com o detalhe de vendas do mês');
+  assert(dashUser.body.data.serie.every(p => p.faturamento === undefined && typeof p.entradas === 'number'),
+    'Operador NÃO recebe faturamento na série (mas vê entradas e saídas)');
+
+  const salesUser = await request(`/api/dashboard/sales?month=${monthKey}`, { token: userToken });
+  assert(salesUser.statusCode === 200 && salesUser.body.data.total.valor === undefined && salesUser.body.data.itens.every(i => i.valor === undefined),
+    'Operador NÃO recebe valores em R$ do detalhe de vendas');
+  const salesBad = await request('/api/dashboard/sales?month=2026-13', { token: adminToken });
+  assert(salesBad.statusCode === 400, 'Mês inválido retorna 400');
+  const salesNoToken = await request(`/api/dashboard/sales?month=${monthKey}`);
+  assert(salesNoToken.statusCode === 401, 'Detalhe de vendas exige autenticação');
+
   // 5. Teste de WebSocket Tempo Real
   console.log('\n--- 5. Conexão em Tempo Real (Socket.io) ---');
   let socketReceivedUpdate = false;
-  const socket = io('http://localhost:3000');
+  const socket = io(`http://localhost:${TEST_PORT}`);
   await new Promise((resolve) => {
     socket.on('connect', () => {
       assert(true, 'Cliente Socket.io conectado com sucesso');

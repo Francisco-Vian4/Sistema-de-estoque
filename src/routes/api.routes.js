@@ -7,6 +7,7 @@ const authController = require('../controllers/auth.controller');
 const productController = require('../controllers/product.controller');
 const movementController = require('../controllers/movement.controller');
 const reportController = require('../controllers/report.controller');
+const dashboardController = require('../controllers/dashboard.controller');
 const { authMiddleware, requireRole } = require('../config/auth');
 const { importExcelFile } = require('../services/excel-import.service');
 
@@ -44,6 +45,10 @@ router.delete('/products/:id', authMiddleware, requireRole('admin'), productCont
 // Rotas de Movimentação de Estoque (Admin)
 router.post('/movements', authMiddleware, requireRole('admin'), movementController.createMovement);
 router.get('/movements', authMiddleware, movementController.listMovements);
+
+// Painel Geral (cards, gráfico, ranking). Valores financeiros só para admin.
+router.get('/dashboard', authMiddleware, dashboardController.getOverview);
+router.get('/dashboard/sales', authMiddleware, dashboardController.getMonthSales);
 
 // Rotas de Relatórios (PDF, Excel, Word)
 router.get('/reports/pdf', authMiddleware, reportController.exportPdf);
